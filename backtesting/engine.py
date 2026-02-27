@@ -58,12 +58,14 @@ def run_backtest(
     test_start = warmup
     test_end = len(computed_df) - horizon_days
 
-    for t in range(test_start, test_end):
+    t = test_start
+    while t < test_end:
         # Read pre-computed indicator values at bar t (causal, no look-ahead)
         signal = combine_signals(indicators, computed_df, horizon_days, idx=t,
                                  precomputed=True)
 
         if signal.direction == SignalDirection.HOLD:
+            t += 1
             continue
 
         entry_price = computed_df["Close"].iloc[t]
@@ -96,6 +98,10 @@ def run_backtest(
             pnl_pct=pnl_pct,
         )
         report.trades.append(trade)
+
+        # Skip forward to avoid overlapping trades
+        t += horizon_days
+        continue
 
     report = compute_metrics(report)
     return report

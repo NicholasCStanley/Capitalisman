@@ -50,10 +50,12 @@ def combine_signals(
     individual_signals: list[SignalResult] = []
     direction_scores: dict[str, float] = {"BUY": 0.0, "SELL": 0.0, "HOLD": 0.0}
 
+    working_df = df if precomputed else df.copy()
+
     for name, indicator in indicators.items():
         if not precomputed:
-            df = indicator.compute(df)
-        signal = indicator.get_signal(df, idx=idx)
+            working_df = indicator.compute(working_df)
+        signal = indicator.get_signal(working_df, idx=idx)
         individual_signals.append(signal)
 
         weight = _get_adjusted_weight(name, horizon_days)
@@ -61,11 +63,20 @@ def combine_signals(
         direction_scores[signal.direction.value] += score
 
     # Determine winner
+    total_score = sum(direction_scores.values())
+
+    if total_score == 0:
+        return CombinedSignal(
+            direction=SignalDirection.HOLD,
+            confidence=0.0,
+            scores=direction_scores,
+            individual_signals=individual_signals,
+            reasoning="No actionable signals from any indicator",
+        )
+
     sorted_dirs = sorted(direction_scores.items(), key=lambda x: x[1], reverse=True)
     top_dir, top_score = sorted_dirs[0]
     second_dir, second_score = sorted_dirs[1]
-
-    total_score = sum(direction_scores.values())
 
     # If scores are too close, signal is ambiguous -> HOLD
     if total_score > 0 and (top_score - second_score) / total_score < AMBIGUITY_THRESHOLD:
