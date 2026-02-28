@@ -1,5 +1,9 @@
 # Capitalisman
 
+<p align="center">
+  <img src="Capitalisman.png" alt="Capitalisman" width="400">
+</p>
+
 A personal stock and crypto prediction tool that helps you make more informed trading decisions. It analyzes price data using proven technical indicators, combines their signals into a single BUY/SELL/HOLD recommendation with a confidence score, and lets you test how well those predictions would have performed on real historical data — all through an easy-to-use web dashboard.
 
 No API keys, no account signups, and no trading experience required to get started.
