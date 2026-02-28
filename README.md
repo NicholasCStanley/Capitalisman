@@ -1,4 +1,4 @@
-#                                                                                  Capitalisman
+#                                                                                                                            Capitalisman
 
 <p align="center">
   <img src="Capitalisman.png" alt="Capitalisman" width="400">
