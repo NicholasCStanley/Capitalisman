@@ -12,6 +12,8 @@ from signals.base import SignalDirection, SignalResult
 
 @register
 class VWAP(BaseIndicator):
+    WINDOW = 20  # rolling anchor period
+
     @property
     def name(self) -> str:
         return "VWAP"
@@ -22,13 +24,19 @@ class VWAP(BaseIndicator):
 
     @property
     def lookback(self) -> int:
-        return 1
+        return self.WINDOW
 
     def compute(self, df: pd.DataFrame) -> pd.DataFrame:
         df = df.copy()
-        # VWAP = cumulative(typical_price * volume) / cumulative(volume)
+        if len(df) < self.lookback:
+            df["VWAP"] = float("nan")
+            return df
+        # Rolling anchored VWAP: use a rolling window so the value stays
+        # relevant on daily charts instead of drifting toward a cumulative
+        # historical average.
         typical_price = (df["High"] + df["Low"] + df["Close"]) / 3
-        df["VWAP"] = (typical_price * df["Volume"]).cumsum() / df["Volume"].cumsum()
+        tp_vol = typical_price * df["Volume"]
+        df["VWAP"] = tp_vol.rolling(window=self.WINDOW).sum() / df["Volume"].rolling(window=self.WINDOW).sum()
         return df
 
     def get_signal(self, df: pd.DataFrame, idx: int = -1) -> SignalResult:

@@ -4,7 +4,7 @@ import pandas as pd
 
 from backtesting.metrics import compute_metrics
 from backtesting.report import BacktestReport, Trade
-from config.settings import WARMUP_BUFFER
+from config.settings import DEFAULT_COST_PER_TRADE_PCT, WARMUP_BUFFER
 from indicators.base import BaseIndicator
 from signals.base import SignalDirection
 from signals.combiner import combine_signals
@@ -17,6 +17,7 @@ def run_backtest(
     period: str,
     horizon_days: int = 5,
     initial_capital: float = 10_000.0,
+    cost_per_trade_pct: float = DEFAULT_COST_PER_TRADE_PCT,
 ) -> BacktestReport:
     """Run walk-forward backtest.
 
@@ -27,6 +28,8 @@ def run_backtest(
         period: Data period string for the report.
         horizon_days: How many days forward to measure outcome.
         initial_capital: Starting capital.
+        cost_per_trade_pct: Round-trip transaction cost as a percentage
+            (slippage + commission). Deducted from each trade's PnL.
 
     Returns:
         BacktestReport with all trades and computed metrics.
@@ -74,17 +77,24 @@ def run_backtest(
         exit_date = computed_df.index[t + horizon_days]
 
         actual_change = exit_price - entry_price
-        actual_direction = "BUY" if actual_change > 0 else "SELL"
+        if actual_change > 0:
+            actual_direction = "BUY"
+        elif actual_change < 0:
+            actual_direction = "SELL"
+        else:
+            actual_direction = "HOLD"  # flat — neither direction is correct
         predicted_direction = signal.direction.value
 
         correct = predicted_direction == actual_direction
 
         # PnL: if we predicted BUY, gain is (exit-entry)/entry
         # if we predicted SELL, gain is (entry-exit)/entry
+        # Transaction cost is deducted as a round-trip percentage.
         if predicted_direction == "BUY":
             pnl_pct = (exit_price - entry_price) / entry_price
         else:
             pnl_pct = (entry_price - exit_price) / entry_price
+        pnl_pct -= cost_per_trade_pct / 100.0
 
         trade = Trade(
             entry_date=entry_date,

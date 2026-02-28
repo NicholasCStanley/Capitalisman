@@ -4,6 +4,7 @@ import streamlit as st
 
 from config.settings import (
     DEFAULT_BACKTEST_PERIOD,
+    DEFAULT_COST_PER_TRADE_PCT,
     DEFAULT_INITIAL_CAPITAL,
     DEFAULT_PERIOD,
     DEFAULT_PREDICTION_HORIZON,
@@ -88,4 +89,17 @@ def capital_input(key: str = "capital") -> float:
         value=DEFAULT_INITIAL_CAPITAL,
         step=1000.0,
         key=key,
+    )
+
+
+def cost_input(key: str = "cost") -> float:
+    """Render transaction cost input (round-trip %)."""
+    return st.number_input(
+        "Transaction Cost (%)",
+        min_value=0.0,
+        max_value=5.0,
+        value=DEFAULT_COST_PER_TRADE_PCT,
+        step=0.05,
+        key=key,
+        help="Round-trip cost per trade (slippage + commission) as a percentage",
     )

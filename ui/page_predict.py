@@ -51,27 +51,34 @@ def render():
     except ValueError as e:
         st.error(str(e))
         return
+    except Exception as e:
+        st.error(f"Unexpected error fetching data: {e}")
+        return
 
-    # Check data sufficiency
-    data_warnings = check_data_sufficiency(len(df), selected_indicators)
-    if data_warnings:
-        st.warning(
-            f"Insufficient data for {len(data_warnings)} indicator(s) "
-            f"({len(df)} bars available):\n\n" + "\n".join(f"- {w}" for w in data_warnings)
-            + "\n\nThese will report HOLD. Use a longer period for full analysis."
-        )
+    try:
+        # Check data sufficiency
+        data_warnings = check_data_sufficiency(len(df), selected_indicators)
+        if data_warnings:
+            st.warning(
+                f"Insufficient data for {len(data_warnings)} indicator(s) "
+                f"({len(df)} bars available):\n\n" + "\n".join(f"- {w}" for w in data_warnings)
+                + "\n\nThese will report HOLD. Use a longer period for full analysis."
+            )
 
-    # Build selected indicators
-    all_indicators = get_all_indicators()
-    chosen = {n: all_indicators[n] for n in selected_indicators if n in all_indicators}
+        # Build selected indicators
+        all_indicators = get_all_indicators()
+        chosen = {n: all_indicators[n] for n in selected_indicators if n in all_indicators}
 
-    # Compute indicators
-    computed_df = df.copy()
-    for name, indicator in chosen.items():
-        computed_df = indicator.compute(computed_df)
+        # Compute indicators
+        computed_df = df.copy()
+        for name, indicator in chosen.items():
+            computed_df = indicator.compute(computed_df)
 
-    # Generate combined signal
-    signal = combine_signals(chosen, computed_df, horizon_days=horizon)
+        # Generate combined signal
+        signal = combine_signals(chosen, computed_df, horizon_days=horizon, precomputed=True)
+    except Exception as e:
+        st.error(f"Error computing signals: {e}")
+        return
 
     # Signal card
     color = _signal_color(signal.direction)

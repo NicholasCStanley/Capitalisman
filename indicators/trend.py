@@ -197,6 +197,7 @@ class MACD(BaseIndicator):
         macd = df["MACD_line"].iloc[idx]
         signal = df["MACD_signal"].iloc[idx]
         hist = df["MACD_hist"].iloc[idx]
+        close = df["Close"].iloc[idx]
 
         if pd.isna(macd) or pd.isna(signal):
             return SignalResult(self.name, SignalDirection.HOLD, 0.0, "Insufficient data")
@@ -208,25 +209,28 @@ class MACD(BaseIndicator):
         if pd.isna(prev_macd) or pd.isna(prev_signal):
             return SignalResult(self.name, SignalDirection.HOLD, 0.0, "Insufficient data")
 
+        # Normalize histogram by price so confidence is scale-independent
+        norm_hist = abs(hist) / close if close > 0 else 0.0
+
         # Bullish crossover
         if prev_macd <= prev_signal and macd > signal:
-            confidence = min(1.0, abs(hist) * 50)
+            confidence = min(1.0, norm_hist * 200)
             return SignalResult(self.name, SignalDirection.BUY, confidence,
                                 "MACD crossed above signal line")
 
         # Bearish crossover
         if prev_macd >= prev_signal and macd < signal:
-            confidence = min(1.0, abs(hist) * 50)
+            confidence = min(1.0, norm_hist * 200)
             return SignalResult(self.name, SignalDirection.SELL, confidence,
                                 "MACD crossed below signal line")
 
         # Trend continuation
         if macd > signal:
-            confidence = min(0.5, abs(hist) * 30)
+            confidence = min(0.5, norm_hist * 120)
             return SignalResult(self.name, SignalDirection.BUY, confidence,
                                 "MACD above signal line")
         elif macd < signal:
-            confidence = min(0.5, abs(hist) * 30)
+            confidence = min(0.5, norm_hist * 120)
             return SignalResult(self.name, SignalDirection.SELL, confidence,
                                 "MACD below signal line")
 

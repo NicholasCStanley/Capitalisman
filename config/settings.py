@@ -11,6 +11,7 @@ DEFAULT_PREDICTION_HORIZON = 5  # days
 # Backtesting defaults
 DEFAULT_BACKTEST_PERIOD = "6mo"
 DEFAULT_INITIAL_CAPITAL = 10_000.0
+DEFAULT_COST_PER_TRADE_PCT = 0.1  # round-trip transaction cost as % (slippage + commission)
 WARMUP_BUFFER = 50  # extra bars beyond longest indicator lookback
 
 # Indicator parameters

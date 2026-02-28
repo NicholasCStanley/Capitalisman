@@ -41,10 +41,11 @@ def compute_metrics(report: BacktestReport) -> BacktestReport:
             max_dd = dd
     report.max_drawdown = max_dd
 
-    # Sharpe ratio (annualized, assuming daily returns)
+    # Sharpe ratio (annualized, adjusted for trade frequency)
     returns = np.array([t.pnl_pct for t in trades])
     if len(returns) > 1 and np.std(returns) > 0:
-        report.sharpe_ratio = (np.mean(returns) / np.std(returns)) * np.sqrt(252)
+        periods_per_year = 252 / report.horizon_days
+        report.sharpe_ratio = (np.mean(returns) / np.std(returns)) * np.sqrt(periods_per_year)
     else:
         report.sharpe_ratio = 0.0
 

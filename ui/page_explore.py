@@ -29,6 +29,9 @@ def render():
     except ValueError as e:
         st.error(str(e))
         return
+    except Exception as e:
+        st.error(f"Unexpected error fetching data: {e}")
+        return
 
     # Asset info card
     info = get_asset_info(ticker)
@@ -50,32 +53,36 @@ def render():
             + "\n\nUse a longer period or wider interval for full indicator coverage."
         )
 
-    # Compute selected indicators
-    all_indicators = get_all_indicators()
-    overlays = []
-    subplot_configs = []
-    computed_df = df.copy()
+    try:
+        # Compute selected indicators
+        all_indicators = get_all_indicators()
+        overlays = []
+        subplot_configs = []
+        computed_df = df.copy()
 
-    for name in selected_indicators:
-        if name not in all_indicators:
-            continue
-        indicator = all_indicators[name]
-        computed_df = indicator.compute(computed_df)
-        chart_cfg = indicator.get_chart_config()
+        for name in selected_indicators:
+            if name not in all_indicators:
+                continue
+            indicator = all_indicators[name]
+            computed_df = indicator.compute(computed_df)
+            chart_cfg = indicator.get_chart_config()
 
-        if chart_cfg.get("overlay"):
-            overlays.append(chart_cfg)
-        else:
-            subplot_configs.append(chart_cfg)
+            if chart_cfg.get("overlay"):
+                overlays.append(chart_cfg)
+            else:
+                subplot_configs.append(chart_cfg)
 
-    # Render chart
-    render_price_chart(
-        computed_df,
-        title=f"{ticker} — {period} ({interval})",
-        overlays=overlays,
-        subplots=subplot_configs,
-        height=700,
-    )
+        # Render chart
+        render_price_chart(
+            computed_df,
+            title=f"{ticker} — {period} ({interval})",
+            overlays=overlays,
+            subplots=subplot_configs,
+            height=700,
+        )
+    except Exception as e:
+        st.error(f"Error computing indicators or rendering chart: {e}")
+        return
 
     # Raw data table
     with st.expander("Raw Data", expanded=False):

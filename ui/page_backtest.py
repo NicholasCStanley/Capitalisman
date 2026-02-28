@@ -10,6 +10,7 @@ from indicators.registry import get_all_indicators
 from ui.components import (
     capital_input,
     check_data_sufficiency,
+    cost_input,
     horizon_input,
     indicator_picker,
     period_select,
@@ -27,6 +28,7 @@ def render():
         horizon = horizon_input(key="backtest_horizon")
         selected_indicators = indicator_picker(key="backtest_indicators")
         initial_capital = capital_input(key="backtest_capital")
+        cost_pct = cost_input(key="backtest_cost")
 
     if not ticker:
         st.info("Enter a ticker symbol in the sidebar to get started.")
@@ -43,6 +45,9 @@ def render():
     except ValueError as e:
         st.error(str(e))
         return
+    except Exception as e:
+        st.error(f"Unexpected error fetching data: {e}")
+        return
 
     # Check data sufficiency
     data_warnings = check_data_sufficiency(len(df), selected_indicators)
@@ -58,11 +63,16 @@ def render():
     chosen = {n: all_indicators[n] for n in selected_indicators if n in all_indicators}
 
     # Run backtest
-    with st.spinner("Running backtest..."):
-        report = run_backtest(
-            df, chosen, ticker=ticker, period=period,
-            horizon_days=horizon, initial_capital=initial_capital,
-        )
+    try:
+        with st.spinner("Running backtest..."):
+            report = run_backtest(
+                df, chosen, ticker=ticker, period=period,
+                horizon_days=horizon, initial_capital=initial_capital,
+                cost_per_trade_pct=cost_pct,
+            )
+    except Exception as e:
+        st.error(f"Error running backtest: {e}")
+        return
 
     if report.total_trades == 0:
         st.warning("No trades generated. Try a longer period or different indicators.")

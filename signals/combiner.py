@@ -60,12 +60,17 @@ def combine_signals(
 
         weight = _get_adjusted_weight(name, horizon_days)
         score = signal.confidence * weight
+        # HOLD signals are recorded for display but don't participate in
+        # directional voting — they represent absence of a signal, not a
+        # competing direction.
         direction_scores[signal.direction.value] += score
 
-    # Determine winner
-    total_score = sum(direction_scores.values())
+    # Only BUY and SELL compete; HOLD is the fallback when neither wins
+    buy_score = direction_scores["BUY"]
+    sell_score = direction_scores["SELL"]
+    directional_total = buy_score + sell_score
 
-    if total_score == 0:
+    if directional_total == 0:
         return CombinedSignal(
             direction=SignalDirection.HOLD,
             confidence=0.0,
@@ -74,22 +79,21 @@ def combine_signals(
             reasoning="No actionable signals from any indicator",
         )
 
-    sorted_dirs = sorted(direction_scores.items(), key=lambda x: x[1], reverse=True)
-    top_dir, top_score = sorted_dirs[0]
-    second_dir, second_score = sorted_dirs[1]
+    top_dir, top_score = ("BUY", buy_score) if buy_score >= sell_score else ("SELL", sell_score)
+    second_score = sell_score if top_dir == "BUY" else buy_score
 
-    # If scores are too close, signal is ambiguous -> HOLD
-    if total_score > 0 and (top_score - second_score) / total_score < AMBIGUITY_THRESHOLD:
+    # If BUY and SELL scores are too close, signal is ambiguous -> HOLD
+    if (top_score - second_score) / directional_total < AMBIGUITY_THRESHOLD:
         confidence = 0.0
         direction = SignalDirection.HOLD
         reasoning = (
-            f"Ambiguous: {top_dir} ({top_score:.2f}) vs "
-            f"{second_dir} ({second_score:.2f}) — too close to call"
+            f"Ambiguous: BUY ({buy_score:.2f}) vs "
+            f"SELL ({sell_score:.2f}) — too close to call"
         )
     else:
         direction = SignalDirection(top_dir)
-        confidence = top_score / total_score if total_score > 0 else 0.0
-        reasoning = f"{top_dir} wins with score {top_score:.2f}/{total_score:.2f}"
+        confidence = top_score / directional_total
+        reasoning = f"{top_dir} wins with score {top_score:.2f}/{directional_total:.2f}"
 
     return CombinedSignal(
         direction=direction,
