@@ -147,10 +147,16 @@ def render():
             st.markdown(f"{r['confidence']:.0%}")
 
         with col_action:
-            if st.button("View", key=f"screener_view_{i}"):
-                st.session_state["predict_ticker"] = r["ticker"]
+
+            def _go_predict(ticker=r["ticker"]):
+                st.session_state["predict_ticker"] = ticker
                 st.session_state["nav_page"] = "Predict"
-                st.rerun()
+
+            st.button(
+                "View",
+                key=f"screener_view_{i}",
+                on_click=_go_predict,
+            )
 
         with st.expander(f"Reasoning — {r['ticker']}", expanded=False):
             st.write(r["reasoning"])
