@@ -8,11 +8,14 @@ from config.settings import (
     DEFAULT_INITIAL_CAPITAL,
     DEFAULT_PERIOD,
     DEFAULT_PREDICTION_HORIZON,
+    INDICATOR_WEIGHTS,
     INTRADAY_WARNINGS,
     INTERVALS,
     PERIOD_LABELS,
     PERIODS,
+    TUNABLE_THRESHOLDS,
 )
+from config.overrides import clear_overrides, get_setting, set_override
 from indicators.registry import get_all_indicators
 
 
@@ -151,6 +154,51 @@ def render_recent_tickers(input_key: str) -> None:
     st.caption("Recent:")
     cols = st.columns(min(len(visible), 4))
     for i, ticker in enumerate(visible[:4]):
-        if cols[i].button(ticker, key=f"recent_{input_key}_{ticker}"):
-            st.session_state[input_key] = ticker
+
+        def _select(t=ticker):
+            st.session_state[input_key] = t
+
+        cols[i].button(ticker, key=f"recent_{input_key}_{ticker}", on_click=_select)
+
+
+def advanced_settings(key_prefix: str = "adv") -> None:
+    """Render an Advanced Settings expander with weight and threshold sliders.
+
+    Overrides are stored in session state via config.overrides so that
+    indicators and the combiner pick them up automatically.
+    """
+    with st.expander("Advanced Settings"):
+        # Indicator weight sliders
+        st.markdown("**Indicator Weights**")
+        for ind_name, default_weight in INDICATOR_WEIGHTS.items():
+            slider_key = f"{key_prefix}_weight_{ind_name}"
+            val = st.slider(
+                ind_name,
+                min_value=0.0,
+                max_value=2.0,
+                value=float(get_setting("INDICATOR_WEIGHTS").get(ind_name, default_weight)),
+                step=0.1,
+                key=slider_key,
+            )
+            # Store per-indicator weight overrides in a dict
+            weights = dict(get_setting("INDICATOR_WEIGHTS"))
+            weights[ind_name] = val
+            set_override("INDICATOR_WEIGHTS", weights)
+
+        st.markdown("**Thresholds**")
+        for setting_name, meta in TUNABLE_THRESHOLDS.items():
+            slider_key = f"{key_prefix}_thresh_{setting_name}"
+            current = get_setting(setting_name)
+            val = st.slider(
+                meta["label"],
+                min_value=meta["min"],
+                max_value=meta["max"],
+                value=type(meta["min"])(current),
+                step=meta["step"],
+                key=slider_key,
+            )
+            set_override(setting_name, val)
+
+        if st.button("Reset to Defaults", key=f"{key_prefix}_reset"):
+            clear_overrides()
             st.rerun()

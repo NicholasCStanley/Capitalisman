@@ -4,6 +4,7 @@ import streamlit as st
 
 from config.settings import WATCHLIST_PRESETS
 from data.fetcher import fetch_ohlcv, get_asset_info
+from data.watchlists import delete_watchlist, load_watchlists, save_watchlist
 from indicators.registry import get_all_indicators
 from signals.base import SignalDirection
 from signals.combiner import combine_signals
@@ -31,11 +32,20 @@ def render():
 
     # Sidebar controls
     with st.sidebar:
+        # Merge built-in presets with user-saved watchlists
+        builtin_names = list(WATCHLIST_PRESETS.keys())
+        user_watchlists = load_watchlists()
+        user_names = [f"{n} (saved)" for n in user_watchlists]
+        all_options = builtin_names + user_names
+
         preset_name = st.selectbox(
             "Watchlist",
-            options=list(WATCHLIST_PRESETS.keys()),
+            options=all_options,
             key="screener_preset",
         )
+
+        is_user_watchlist = preset_name.endswith(" (saved)")
+        raw_name = preset_name.removesuffix(" (saved)") if is_user_watchlist else preset_name
 
         if preset_name == "Custom":
             custom_input = st.text_input(
@@ -44,6 +54,22 @@ def render():
                 key="screener_custom",
             )
             tickers = [t.strip().upper() for t in custom_input.split(",") if t.strip()]
+
+            # Save watchlist controls
+            if tickers:
+                save_col, _ = st.columns([2, 1])
+                with save_col:
+                    wl_name = st.text_input("Watchlist name", key="screener_save_name")
+                if wl_name and st.button("Save Watchlist"):
+                    save_watchlist(wl_name, tickers)
+                    st.success(f"Saved '{wl_name}' with {len(tickers)} tickers.")
+                    st.rerun()
+        elif is_user_watchlist:
+            tickers = user_watchlists.get(raw_name, [])
+            if st.button("Delete Watchlist"):
+                delete_watchlist(raw_name)
+                st.success(f"Deleted '{raw_name}'.")
+                st.rerun()
         else:
             tickers = WATCHLIST_PRESETS[preset_name]
 
@@ -168,3 +194,28 @@ def render():
 
         if i < len(results) - 1:
             st.divider()
+
+    # CSV export for screener results
+    import pandas as pd
+
+    csv_rows = []
+    for r in results:
+        csv_rows.append({
+            "Ticker": r["ticker"],
+            "Name": r["name"],
+            "Price": r["price"],
+            "Change %": r["change_pct"],
+            "Signal": r["direction"].value,
+            "Confidence": r["confidence"],
+            "BUY Score": r["scores"].get("BUY", 0),
+            "SELL Score": r["scores"].get("SELL", 0),
+            "HOLD Score": r["scores"].get("HOLD", 0),
+            "Reasoning": r["reasoning"],
+        })
+    csv_string = pd.DataFrame(csv_rows).to_csv(index=False)
+    st.download_button(
+        "Download CSV",
+        data=csv_string,
+        file_name=f"screener_{preset_name.lower().replace(' ', '_')}.csv",
+        mime="text/csv",
+    )

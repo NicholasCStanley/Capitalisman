@@ -9,6 +9,7 @@ from config.settings import BACKTEST_FETCH_PERIOD
 from data.fetcher import compute_buy_and_hold, fetch_ohlcv
 from indicators.registry import get_all_indicators
 from ui.components import (
+    advanced_settings,
     capital_input,
     check_data_sufficiency,
     cost_input,
@@ -35,6 +36,7 @@ def render():
         selected_indicators = indicator_picker(key="backtest_indicators")
         initial_capital = capital_input(key="backtest_capital")
         cost_pct = cost_input(key="backtest_cost")
+        advanced_settings(key_prefix="backtest_adv")
 
     if not ticker:
         st.info("Enter a ticker symbol in the sidebar to get started.")
@@ -194,4 +196,13 @@ def render():
                 "P&L": f"{t.pnl_pct:+.2%}",
                 "Correct": "Yes" if t.correct else "No",
             })
-        st.dataframe(pd.DataFrame(trade_data), use_container_width=True)
+        trade_df = pd.DataFrame(trade_data)
+        st.dataframe(trade_df, use_container_width=True)
+
+        csv = trade_df.to_csv(index=False)
+        st.download_button(
+            "Download CSV",
+            data=csv,
+            file_name=f"backtest_{ticker}_{period}_{horizon}d.csv",
+            mime="text/csv",
+        )

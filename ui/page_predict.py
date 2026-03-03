@@ -8,6 +8,7 @@ from indicators.registry import get_all_indicators
 from signals.base import SignalDirection
 from signals.combiner import combine_signals
 from ui.components import (
+    advanced_settings,
     check_data_sufficiency,
     horizon_input,
     indicator_picker,
@@ -44,6 +45,7 @@ def render():
         period = period_select(key="predict_period")
         horizon = horizon_input(key="predict_horizon")
         selected_indicators = indicator_picker(key="predict_indicators")
+        advanced_settings(key_prefix="predict_adv")
 
     if not ticker:
         st.info("Enter a ticker symbol in the sidebar to get started.")
@@ -94,7 +96,36 @@ def render():
         st.error(f"Error computing signals: {e}")
         return
 
-    # Signal card
+    # Multi-timeframe signal cards (1d, 5d, 20d)
+    _MTF_HORIZONS = [("1d", 1), ("5d", 5), ("20d", 20)]
+    mtf_cols = st.columns(len(_MTF_HORIZONS))
+    for col, (label, h) in zip(mtf_cols, _MTF_HORIZONS):
+        mtf_signal = combine_signals(chosen, computed_df, horizon_days=h, precomputed=True)
+        mtf_color = _signal_color(mtf_signal.direction)
+        mtf_arrow = _signal_emoji(mtf_signal.direction)
+        with col:
+            st.markdown(
+                f"""
+                <div style="
+                    border: 1px solid {mtf_color};
+                    border-radius: 8px;
+                    padding: 12px;
+                    text-align: center;
+                    margin-bottom: 12px;
+                ">
+                    <p style="font-size: 0.85em; color: #999; margin: 0;">{label}</p>
+                    <p style="color: {mtf_color}; font-weight: bold; font-size: 1.2em; margin: 4px 0;">
+                        {mtf_arrow} {mtf_signal.direction.value}
+                    </p>
+                    <p style="font-size: 0.85em; color: #ccc; margin: 0;">
+                        {mtf_signal.confidence:.0%}
+                    </p>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+    # Primary signal card
     color = _signal_color(signal.direction)
     arrow = _signal_emoji(signal.direction)
 

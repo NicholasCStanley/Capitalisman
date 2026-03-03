@@ -86,6 +86,16 @@ INDICATOR_CATEGORIES = {
 # Signal combination
 AMBIGUITY_THRESHOLD = 0.10  # if top two directions within 10%, result is HOLD
 
+# Tunable thresholds exposed in the UI's "Advanced Settings" panel.
+# Each entry maps a setting name to metadata for rendering a slider.
+TUNABLE_THRESHOLDS = {
+    "RSI_OVERSOLD": {"label": "RSI Oversold", "min": 10, "max": 50, "step": 1},
+    "RSI_OVERBOUGHT": {"label": "RSI Overbought", "min": 50, "max": 90, "step": 1},
+    "STOCH_OVERSOLD": {"label": "Stochastic Oversold", "min": 5, "max": 40, "step": 1},
+    "STOCH_OVERBOUGHT": {"label": "Stochastic Overbought", "min": 60, "max": 95, "step": 1},
+    "AMBIGUITY_THRESHOLD": {"label": "Ambiguity Threshold", "min": 0.0, "max": 0.30, "step": 0.01},
+}
+
 # Available data periods and intervals for UI
 PERIODS = ["1d", "5d", "1wk", "2wk", "1mo", "3mo", "6mo", "1y", "2y", "5y", "max"]
 INTERVALS = ["1m", "5m", "15m", "1h", "1d", "1wk", "1mo"]

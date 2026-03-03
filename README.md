@@ -20,6 +20,8 @@ Pick a ticker (like `AAPL` for Apple, or `BTC-USD` for Bitcoin) and a time horiz
 
 Each prediction comes with a **confidence score** (0–100%) so you can see how strongly the indicators agree, plus a full breakdown showing what each individual indicator is saying and why.
 
+**Multi-Timeframe Signals** — Above the primary signal card, three compact cards show the signal for 1-day, 5-day, and 20-day horizons simultaneously, so you can see whether short-term and long-term outlooks agree at a glance.
+
 ### Backtest — Test How Well Predictions Would Have Worked
 
 Before trusting any strategy, you want to know: "How accurate would this have been in the past?" The backtest page answers that question by running predictions across historical data and measuring the results.
@@ -33,6 +35,7 @@ You'll see:
 - **Profit Factor** — total gains divided by total losses (above 1.0 means profitable)
 - **Equity Curve** — a chart showing your portfolio value over time
 - **Trade Log** — every individual trade with entry/exit prices and profit/loss
+- **CSV Export** — download the full trade log as a CSV file for further analysis in Excel or Google Sheets
 
 Backtests include **configurable transaction costs** (slippage and commissions, default 0.1% per trade) so results reflect realistic trading conditions rather than idealized zero-cost scenarios.
 
@@ -52,6 +55,10 @@ Pick two tickers and compare them head-to-head. The Compare page shows:
 ### Screener — Scan Multiple Tickers at Once
 
 Select a preset watchlist (Tech Giants, S&P 500 Top 10, Major Crypto, Indices) or enter your own comma-separated list of tickers. Hit **Scan Watchlist** and the tool runs a full signal analysis on every ticker, then ranks the results by confidence. Each result shows price, daily change, signal direction, confidence, and expandable reasoning. Click **View** to jump to the Predict page for any ticker.
+
+**Persistent Watchlists** — When using a custom ticker list, you can save it as a named watchlist. Saved watchlists appear in the dropdown with a "(saved)" suffix and persist across sessions (stored in `~/.capitalisman/watchlists.json`). You can delete user-created watchlists at any time; built-in presets cannot be deleted.
+
+**CSV Export** — Download the full screener results (ticker, name, price, change, signal, confidence, scores, reasoning) as a CSV file.
 
 ### Explore — Browse Charts and Data
 
@@ -160,6 +167,20 @@ When running a backtest, you can configure:
 
 ## Configuration
 
+### In-App Advanced Settings
+
+The Predict and Backtest pages both include an **Advanced Settings** expander in the sidebar where you can tune the signal engine without editing any code:
+
+- **Indicator Weights** (0.0–2.0 per indicator) — increase or decrease each indicator's influence on the combined signal. Setting a weight to 0 effectively disables that indicator.
+- **RSI Oversold / Overbought** — adjust the thresholds that trigger RSI buy and sell signals (defaults: 30 / 70).
+- **Stochastic Oversold / Overbought** — adjust the zones for Stochastic crossover signals (defaults: 20 / 80).
+- **Ambiguity Threshold** — how close BUY and SELL scores need to be before the result becomes HOLD (default 0.10).
+- **Reset to Defaults** — one-click button to restore all settings to their original values.
+
+Overrides are session-scoped — they apply immediately to signal generation and backtests but reset when you close the browser tab. For permanent changes, edit `config/settings.py` directly.
+
+### File-Based Configuration
+
 Advanced users can adjust defaults in `config/settings.py`:
 
 - **Indicator parameters** — periods, thresholds (RSI overbought/oversold levels, Stochastic zones, Bollinger Band width, etc.)
@@ -176,9 +197,11 @@ Capitalisman/
 ├── app.py                      # App entry point
 ├── requirements.txt            # Python dependencies
 ├── config/
-│   └── settings.py             # All configurable defaults & watchlist presets
+│   ├── settings.py             # All configurable defaults & watchlist presets
+│   └── overrides.py            # Session-scoped settings override system
 ├── data/
-│   └── fetcher.py              # Market data fetching, search, and caching
+│   ├── fetcher.py              # Market data fetching, search, and caching
+│   └── watchlists.py           # Persistent watchlist storage (~/.capitalisman/)
 ├── indicators/
 │   ├── base.py                 # Indicator interface
 │   ├── registry.py             # Auto-registration system
@@ -197,14 +220,20 @@ Capitalisman/
 │   ├── tradingview.py          # TradingView chart rendering
 │   ├── plotly_fallback.py      # Plotly chart rendering (candlestick, comparison, equity)
 │   └── factory.py              # Auto-selects best chart renderer
-└── ui/
-    ├── components.py           # Shared sidebar controls
-    ├── page_predict.py         # Predict page
-    ├── page_backtest.py        # Backtest page
-    ├── page_explore.py         # Explore page
-    ├── page_search.py          # Search page
-    ├── page_compare.py         # Compare page
-    └── page_screener.py        # Screener page
+├── ui/
+│   ├── components.py           # Shared sidebar controls & advanced settings
+│   ├── page_predict.py         # Predict page (with multi-timeframe signals)
+│   ├── page_backtest.py        # Backtest page (with CSV export)
+│   ├── page_explore.py         # Explore page
+│   ├── page_search.py          # Search page
+│   ├── page_compare.py         # Compare page
+│   └── page_screener.py        # Screener page (with CSV export & persistent watchlists)
+└── tests/
+    ├── conftest.py             # Test fixtures & synthetic OHLCV data factory
+    ├── test_indicators.py      # Indicator computation & signal tests
+    ├── test_combiner.py        # Signal combination logic tests
+    ├── test_backtest.py        # Backtest engine & metrics tests
+    └── test_fetcher.py         # Data fetcher utility tests
 ```
 
 ## Dependencies
@@ -219,6 +248,17 @@ Installed automatically via `pip install -r requirements.txt`:
 | `plotly` | Interactive charts |
 | `pandas` / `numpy` | Data processing |
 | `lightweight-charts` | TradingView-style charts (optional — the app automatically falls back to Plotly if not installed) |
+| `pytest` | Unit testing framework (development only) |
+
+## Running Tests
+
+The project includes a test suite covering indicators, signal combination, backtesting, and data utilities:
+
+```bash
+python -m pytest tests/ -v
+```
+
+Tests use synthetic OHLCV data (no network calls or API keys required) and run in under a second.
 
 ## Disclaimer
 

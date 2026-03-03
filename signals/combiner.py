@@ -2,12 +2,8 @@
 
 import pandas as pd
 
-from config.settings import (
-    AMBIGUITY_THRESHOLD,
-    INDICATOR_CATEGORIES,
-    INDICATOR_WEIGHTS,
-    TIMESCALE_ADJUSTMENTS,
-)
+from config.overrides import get_setting
+from config.settings import INDICATOR_CATEGORIES, TIMESCALE_ADJUSTMENTS
 from indicators.base import BaseIndicator
 from signals.base import CombinedSignal, SignalDirection, SignalResult
 
@@ -21,7 +17,8 @@ def _get_timescale(horizon_days: int) -> str:
 
 
 def _get_adjusted_weight(indicator_name: str, horizon_days: int) -> float:
-    base_weight = INDICATOR_WEIGHTS.get(indicator_name, 1.0)
+    weights = get_setting("INDICATOR_WEIGHTS")
+    base_weight = weights.get(indicator_name, 1.0)
     category = INDICATOR_CATEGORIES.get(indicator_name, "trend")
     timescale = _get_timescale(horizon_days)
     adjustment = TIMESCALE_ADJUSTMENTS[timescale].get(category, 1.0)
@@ -136,7 +133,7 @@ def combine_signals(
     second_score = sell_score if top_dir == "BUY" else buy_score
 
     # If BUY and SELL scores are too close, signal is ambiguous -> HOLD
-    if (top_score - second_score) / directional_total < AMBIGUITY_THRESHOLD:
+    if (top_score - second_score) / directional_total < get_setting("AMBIGUITY_THRESHOLD"):
         confidence = 0.0
         direction = SignalDirection.HOLD
     else:

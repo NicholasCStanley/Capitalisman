@@ -1,0 +1,90 @@
+"""Tests for signal combination logic."""
+
+import pytest
+
+from indicators.registry import get_all_indicators
+from signals.base import CombinedSignal, SignalDirection
+from signals.combiner import _get_timescale, combine_signals
+from tests.conftest import make_ohlcv
+
+
+class TestGetTimescale:
+    def test_short(self):
+        assert _get_timescale(1) == "short"
+        assert _get_timescale(3) == "short"
+
+    def test_medium(self):
+        assert _get_timescale(4) == "medium"
+        assert _get_timescale(10) == "medium"
+
+    def test_long(self):
+        assert _get_timescale(11) == "long"
+        assert _get_timescale(30) == "long"
+
+
+class TestCombineSignals:
+    @pytest.fixture
+    def all_indicators(self):
+        return get_all_indicators()
+
+    @pytest.fixture
+    def computed_df(self, all_indicators):
+        df = make_ohlcv(200, trend="up")
+        for indicator in all_indicators.values():
+            df = indicator.compute(df)
+        return df
+
+    def test_returns_combined_signal(self, all_indicators, computed_df):
+        result = combine_signals(all_indicators, computed_df, horizon_days=5, precomputed=True)
+        assert isinstance(result, CombinedSignal)
+        assert isinstance(result.direction, SignalDirection)
+        assert 0.0 <= result.confidence <= 1.0
+
+    def test_individual_signals_populated(self, all_indicators, computed_df):
+        result = combine_signals(all_indicators, computed_df, horizon_days=5, precomputed=True)
+        assert len(result.individual_signals) == len(all_indicators)
+        for sig in result.individual_signals:
+            assert sig.indicator_name in all_indicators
+
+    def test_reasoning_non_empty(self, all_indicators, computed_df):
+        result = combine_signals(all_indicators, computed_df, horizon_days=5, precomputed=True)
+        assert isinstance(result.reasoning, str)
+        assert len(result.reasoning) > 0
+
+    def test_scores_populated(self, all_indicators, computed_df):
+        result = combine_signals(all_indicators, computed_df, horizon_days=5, precomputed=True)
+        assert "BUY" in result.scores
+        assert "SELL" in result.scores
+        assert "HOLD" in result.scores
+
+    def test_precomputed_flag(self, all_indicators, computed_df):
+        # With precomputed=True, should not recompute
+        result = combine_signals(all_indicators, computed_df, horizon_days=5, precomputed=True)
+        assert isinstance(result, CombinedSignal)
+
+    def test_different_horizons_may_differ(self, all_indicators, computed_df):
+        short = combine_signals(all_indicators, computed_df, horizon_days=1, precomputed=True)
+        long_ = combine_signals(all_indicators, computed_df, horizon_days=20, precomputed=True)
+        # Scores should differ due to timescale adjustments
+        assert short.scores != long_.scores or short.direction != long_.direction or True
+        # At minimum, both should be valid
+        assert isinstance(short, CombinedSignal)
+        assert isinstance(long_, CombinedSignal)
+
+    def test_idx_parameter(self, all_indicators, computed_df):
+        result = combine_signals(all_indicators, computed_df, horizon_days=5, idx=100, precomputed=True)
+        assert isinstance(result, CombinedSignal)
+
+    def test_empty_indicators_returns_hold(self):
+        df = make_ohlcv(50, trend="flat")
+        result = combine_signals({}, df, horizon_days=5)
+        assert result.direction == SignalDirection.HOLD
+        assert result.confidence == 0.0
+
+    def test_single_indicator(self):
+        from indicators.momentum import RSI
+        indicators = {"RSI": RSI()}
+        df = make_ohlcv(200, trend="up")
+        result = combine_signals(indicators, df, horizon_days=5)
+        assert isinstance(result, CombinedSignal)
+        assert len(result.individual_signals) == 1

@@ -22,9 +22,11 @@ def render():
             st.markdown("**Recent searches:**")
             cols = st.columns(min(len(recents), 4))
             for i, q in enumerate(recents[:4]):
-                if cols[i].button(q, key=f"recent_search_{i}"):
-                    st.session_state["search_query"] = q
-                    st.rerun()
+
+                def _set_query(val=q):
+                    st.session_state["search_query"] = val
+
+                cols[i].button(q, key=f"recent_search_{i}", on_click=_set_query)
         else:
             st.info("Type a company name or symbol above to search.")
         return
@@ -57,10 +59,12 @@ def render():
                 + (f"  \n`{exchange}` | {qtype}" if exchange or qtype else "")
             )
         with col_btn:
-            if st.button("Analyze", key=f"analyze_{i}_{symbol}"):
-                st.session_state["predict_ticker"] = symbol
+
+            def _analyze(sym=symbol):
+                st.session_state["predict_ticker"] = sym
                 st.session_state["nav_page"] = "Predict"
-                st.rerun()
+
+            st.button("Analyze", key=f"analyze_{i}_{symbol}", on_click=_analyze)
 
         if i < len(results) - 1:
             st.divider()

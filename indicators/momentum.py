@@ -6,6 +6,7 @@ import pandas as pd
 import ta
 
 from config import settings
+from config.overrides import get_setting
 from indicators.base import BaseIndicator
 from indicators.registry import register
 from signals.base import SignalDirection, SignalResult
@@ -42,14 +43,17 @@ class RSI(BaseIndicator):
         if pd.isna(rsi):
             return SignalResult(self.name, SignalDirection.HOLD, 0.0, "Insufficient data")
 
-        if rsi < settings.RSI_OVERSOLD:
+        rsi_oversold = get_setting("RSI_OVERSOLD")
+        rsi_overbought = get_setting("RSI_OVERBOUGHT")
+
+        if rsi < rsi_oversold:
             # Deeper oversold = higher confidence
-            confidence = min(1.0, (settings.RSI_OVERSOLD - rsi) / settings.RSI_OVERSOLD)
+            confidence = min(1.0, (rsi_oversold - rsi) / rsi_oversold)
             return SignalResult(self.name, SignalDirection.BUY, confidence,
                                 f"Oversold (RSI={rsi:.1f})")
 
-        if rsi > settings.RSI_OVERBOUGHT:
-            confidence = min(1.0, (rsi - settings.RSI_OVERBOUGHT) / (100 - settings.RSI_OVERBOUGHT))
+        if rsi > rsi_overbought:
+            confidence = min(1.0, (rsi - rsi_overbought) / (100 - rsi_overbought))
             return SignalResult(self.name, SignalDirection.SELL, confidence,
                                 f"Overbought (RSI={rsi:.1f})")
 
@@ -118,23 +122,26 @@ class Stochastic(BaseIndicator):
         if pd.isna(prev_k) or pd.isna(prev_d):
             return SignalResult(self.name, SignalDirection.HOLD, 0.0, "Insufficient data")
 
+        stoch_oversold = get_setting("STOCH_OVERSOLD")
+        stoch_overbought = get_setting("STOCH_OVERBOUGHT")
+
         # Bullish: %K crosses above %D in oversold zone
-        if k < settings.STOCH_OVERSOLD and prev_k <= prev_d and k > d:
-            confidence = min(1.0, (settings.STOCH_OVERSOLD - k) / settings.STOCH_OVERSOLD)
+        if k < stoch_oversold and prev_k <= prev_d and k > d:
+            confidence = min(1.0, (stoch_oversold - k) / stoch_oversold)
             return SignalResult(self.name, SignalDirection.BUY, max(0.5, confidence),
                                 f"Bullish crossover in oversold zone (%K={k:.1f}, %D={d:.1f})")
 
         # Bearish: %K crosses below %D in overbought zone
-        if k > settings.STOCH_OVERBOUGHT and prev_k >= prev_d and k < d:
-            confidence = min(1.0, (k - settings.STOCH_OVERBOUGHT) / (100 - settings.STOCH_OVERBOUGHT))
+        if k > stoch_overbought and prev_k >= prev_d and k < d:
+            confidence = min(1.0, (k - stoch_overbought) / (100 - stoch_overbought))
             return SignalResult(self.name, SignalDirection.SELL, max(0.5, confidence),
                                 f"Bearish crossover in overbought zone (%K={k:.1f}, %D={d:.1f})")
 
         # In oversold/overbought but no crossover
-        if k < settings.STOCH_OVERSOLD:
+        if k < stoch_oversold:
             return SignalResult(self.name, SignalDirection.BUY, 0.3,
                                 f"Oversold (%K={k:.1f})")
-        if k > settings.STOCH_OVERBOUGHT:
+        if k > stoch_overbought:
             return SignalResult(self.name, SignalDirection.SELL, 0.3,
                                 f"Overbought (%K={k:.1f})")
 
