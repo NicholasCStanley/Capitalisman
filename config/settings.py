@@ -116,6 +116,18 @@ WARMUP_FETCH_PERIOD = {
     "3mo": "1y",
 }
 
+# Maps short periods to longer fetch periods for backtesting.
+# The backtest engine requires max_lookback + WARMUP_BUFFER + horizon bars,
+# so we need more history than the charting warmup provides.
+BACKTEST_FETCH_PERIOD = {
+    "1d": "1y",
+    "5d": "1y",
+    "1wk": "1y",
+    "2wk": "1y",
+    "1mo": "1y",
+    "3mo": "1y",
+}
+
 # Calendar days to keep when trimming warmup data back to display range.
 # Only needed for periods that appear in WARMUP_FETCH_PERIOD.
 PERIOD_CALENDAR_DAYS = {

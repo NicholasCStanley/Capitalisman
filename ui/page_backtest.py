@@ -5,6 +5,7 @@ import streamlit as st
 
 from backtesting.engine import run_backtest
 from charts.factory import render_equity_curve, render_price_chart
+from config.settings import BACKTEST_FETCH_PERIOD
 from data.fetcher import compute_buy_and_hold, fetch_ohlcv
 from indicators.registry import get_all_indicators
 from ui.components import (
@@ -45,10 +46,12 @@ def render():
 
     record_recent_ticker(ticker)
 
-    # Fetch data
+    # Fetch data — for short periods, fetch extra history so indicators
+    # and the backtest engine have enough warmup bars.
+    fetch_period = BACKTEST_FETCH_PERIOD.get(period, period)
     try:
         with st.spinner("Fetching data..."):
-            df = fetch_ohlcv(ticker, period=period)
+            df = fetch_ohlcv(ticker, period=fetch_period)
     except ValueError as e:
         st.error(str(e))
         return
