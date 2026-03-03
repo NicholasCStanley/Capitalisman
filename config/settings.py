@@ -89,3 +89,17 @@ AMBIGUITY_THRESHOLD = 0.10  # if top two directions within 10%, result is HOLD
 # Available data periods and intervals for UI
 PERIODS = ["1mo", "3mo", "6mo", "1y", "2y", "5y", "max"]
 INTERVALS = ["1m", "5m", "15m", "1h", "1d", "1wk", "1mo"]
+
+# Yahoo Finance intraday data limits (max history available per interval)
+INTRADAY_MAX_PERIODS = {
+    "1m": "7d",
+    "5m": "60d",
+    "15m": "60d",
+    "1h": "730d",
+}
+INTRADAY_WARNINGS = {
+    "1m": "1-minute data is limited to the last 7 days regardless of period selected.",
+    "5m": "5-minute data is limited to the last 60 days regardless of period selected.",
+    "15m": "15-minute data is limited to the last 60 days regardless of period selected.",
+    "1h": "Hourly data is limited to the last 730 days regardless of period selected.",
+}

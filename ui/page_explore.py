@@ -5,7 +5,16 @@ import streamlit as st
 from charts.factory import render_price_chart
 from data.fetcher import fetch_ohlcv, get_asset_info
 from indicators.registry import get_all_indicators
-from ui.components import check_data_sufficiency, indicator_picker, interval_select, period_select, ticker_input
+from ui.components import (
+    check_data_sufficiency,
+    indicator_picker,
+    interval_select,
+    period_select,
+    record_recent_ticker,
+    render_recent_tickers,
+    show_interval_warning,
+    ticker_input,
+)
 
 
 def render():
@@ -14,13 +23,17 @@ def render():
     # Sidebar controls
     with st.sidebar:
         ticker = ticker_input(key="explore_ticker")
+        render_recent_tickers("explore_ticker")
         period = period_select(key="explore_period")
         interval = interval_select(key="explore_interval")
+        show_interval_warning(interval)
         selected_indicators = indicator_picker(key="explore_indicators")
 
     if not ticker:
         st.info("Enter a ticker symbol in the sidebar to get started.")
         return
+
+    record_recent_ticker(ticker)
 
     # Fetch data
     try:

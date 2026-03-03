@@ -28,6 +28,57 @@ def _get_adjusted_weight(indicator_name: str, horizon_days: int) -> float:
     return base_weight * adjustment
 
 
+def _build_reasoning(
+    direction: SignalDirection,
+    confidence: float,
+    individual_signals: list[SignalResult],
+    buy_score: float,
+    sell_score: float,
+) -> str:
+    """Build a plain-English explanation of the combined signal."""
+    total = len(individual_signals)
+    if total == 0:
+        return "No indicators evaluated."
+
+    if direction == SignalDirection.HOLD and confidence == 0.0 and buy_score == 0 and sell_score == 0:
+        return "No actionable signals from any indicator."
+
+    buy_signals = [s for s in individual_signals if s.direction == SignalDirection.BUY]
+    sell_signals = [s for s in individual_signals if s.direction == SignalDirection.SELL]
+    hold_signals = [s for s in individual_signals if s.direction == SignalDirection.HOLD]
+
+    if direction == SignalDirection.HOLD:
+        parts = [f"Indicators are split: {len(buy_signals)} bullish vs {len(sell_signals)} bearish"]
+        if hold_signals:
+            parts[0] += f" ({len(hold_signals)} neutral)"
+        parts.append(f"Weighted scores are too close — BUY {buy_score:.2f} vs SELL {sell_score:.2f}.")
+        return " ".join(parts)
+
+    # BUY or SELL — describe what's driving the signal
+    if direction == SignalDirection.BUY:
+        drivers = buy_signals
+        opposing = sell_signals
+        label, opp_label = "bullish", "bearish"
+    else:
+        drivers = sell_signals
+        opposing = buy_signals
+        label, opp_label = "bearish", "bullish"
+
+    parts = [f"{len(drivers)} of {total} indicators are {label}."]
+
+    # Highlight the strongest drivers (confidence >= 0.5)
+    strong = sorted(drivers, key=lambda s: s.confidence, reverse=True)
+    highlights = [s.detail for s in strong[:3] if s.confidence >= 0.4]
+    if highlights:
+        parts.append(" ".join(f"{h}." if not h.endswith(".") else h for h in highlights))
+
+    if opposing:
+        opp_names = ", ".join(s.indicator_name for s in opposing)
+        parts.append(f"{opp_names} disagree{'s' if len(opposing) == 1 else ''} ({opp_label}).")
+
+    return " ".join(parts)
+
+
 def combine_signals(
     indicators: dict[str, BaseIndicator],
     df: pd.DataFrame,
@@ -76,7 +127,9 @@ def combine_signals(
             confidence=0.0,
             scores=direction_scores,
             individual_signals=individual_signals,
-            reasoning="No actionable signals from any indicator",
+            reasoning=_build_reasoning(
+                SignalDirection.HOLD, 0.0, individual_signals, buy_score, sell_score
+            ),
         )
 
     top_dir, top_score = ("BUY", buy_score) if buy_score >= sell_score else ("SELL", sell_score)
@@ -86,14 +139,11 @@ def combine_signals(
     if (top_score - second_score) / directional_total < AMBIGUITY_THRESHOLD:
         confidence = 0.0
         direction = SignalDirection.HOLD
-        reasoning = (
-            f"Ambiguous: BUY ({buy_score:.2f}) vs "
-            f"SELL ({sell_score:.2f}) — too close to call"
-        )
     else:
         direction = SignalDirection(top_dir)
         confidence = top_score / directional_total
-        reasoning = f"{top_dir} wins with score {top_score:.2f}/{directional_total:.2f}"
+
+    reasoning = _build_reasoning(direction, confidence, individual_signals, buy_score, sell_score)
 
     return CombinedSignal(
         direction=direction,

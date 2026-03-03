@@ -5,6 +5,7 @@ import pandas as pd
 from backtesting.metrics import compute_metrics
 from backtesting.report import BacktestReport, Trade
 from config.settings import DEFAULT_COST_PER_TRADE_PCT, WARMUP_BUFFER
+from data.fetcher import is_crypto_ticker
 from indicators.base import BaseIndicator
 from signals.base import SignalDirection
 from signals.combiner import combine_signals
@@ -39,6 +40,7 @@ def run_backtest(
         period=period,
         horizon_days=horizon_days,
         initial_capital=initial_capital,
+        is_crypto=is_crypto_ticker(ticker),
     )
 
     # Pre-compute all indicators once over the full dataset.

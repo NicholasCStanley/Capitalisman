@@ -14,9 +14,14 @@ def compute_metrics(report: BacktestReport) -> BacktestReport:
     if not trades:
         return report
 
-    report.winning_trades = sum(1 for t in trades if t.correct)
+    # Profitable = positive P&L (the standard financial meaning of "winning")
+    report.winning_trades = sum(1 for t in trades if t.pnl_pct > 0)
     report.losing_trades = report.total_trades - report.winning_trades
     report.win_rate = report.winning_trades / report.total_trades
+
+    # Direction accuracy = predicted direction matched actual price movement
+    report.correct_predictions = sum(1 for t in trades if t.correct)
+    report.prediction_accuracy = report.correct_predictions / report.total_trades
 
     # Build equity curve
     equity = [report.initial_capital]
@@ -41,10 +46,11 @@ def compute_metrics(report: BacktestReport) -> BacktestReport:
             max_dd = dd
     report.max_drawdown = max_dd
 
-    # Sharpe ratio (annualized, adjusted for trade frequency)
+    # Sharpe ratio (annualized, adjusted for trade frequency and asset type)
     returns = np.array([t.pnl_pct for t in trades])
     if len(returns) > 1 and np.std(returns) > 0:
-        periods_per_year = 252 / report.horizon_days
+        trading_days_per_year = 365 if report.is_crypto else 252
+        periods_per_year = trading_days_per_year / report.horizon_days
         report.sharpe_ratio = (np.mean(returns) / np.std(returns)) * np.sqrt(periods_per_year)
     else:
         report.sharpe_ratio = 0.0

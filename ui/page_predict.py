@@ -7,7 +7,15 @@ from data.fetcher import fetch_ohlcv
 from indicators.registry import get_all_indicators
 from signals.base import SignalDirection
 from signals.combiner import combine_signals
-from ui.components import check_data_sufficiency, horizon_input, indicator_picker, period_select, ticker_input
+from ui.components import (
+    check_data_sufficiency,
+    horizon_input,
+    indicator_picker,
+    period_select,
+    record_recent_ticker,
+    render_recent_tickers,
+    ticker_input,
+)
 
 
 def _signal_color(direction: SignalDirection) -> str:
@@ -32,6 +40,7 @@ def render():
     # Sidebar controls
     with st.sidebar:
         ticker = ticker_input(key="predict_ticker")
+        render_recent_tickers("predict_ticker")
         period = period_select(key="predict_period")
         horizon = horizon_input(key="predict_horizon")
         selected_indicators = indicator_picker(key="predict_indicators")
@@ -43,6 +52,8 @@ def render():
     if not selected_indicators:
         st.warning("Select at least one indicator.")
         return
+
+    record_recent_ticker(ticker)
 
     # Fetch data
     try:
@@ -107,6 +118,10 @@ def render():
         """,
         unsafe_allow_html=True,
     )
+
+    # Reasoning narrative
+    if signal.reasoning:
+        st.markdown(f"**Analysis:** {signal.reasoning}")
 
     # Score breakdown
     col1, col2, col3 = st.columns(3)

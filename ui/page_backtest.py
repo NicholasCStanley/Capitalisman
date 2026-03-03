@@ -5,7 +5,7 @@ import streamlit as st
 
 from backtesting.engine import run_backtest
 from charts.factory import render_equity_curve, render_price_chart
-from data.fetcher import fetch_ohlcv
+from data.fetcher import compute_buy_and_hold, fetch_ohlcv
 from indicators.registry import get_all_indicators
 from ui.components import (
     capital_input,
@@ -14,8 +14,12 @@ from ui.components import (
     horizon_input,
     indicator_picker,
     period_select,
+    record_recent_ticker,
+    render_recent_tickers,
     ticker_input,
 )
+
+_DEFAULT_BENCHMARK = "SPY"
 
 
 def render():
@@ -24,6 +28,7 @@ def render():
     # Sidebar controls
     with st.sidebar:
         ticker = ticker_input(key="backtest_ticker")
+        render_recent_tickers("backtest_ticker")
         period = period_select(key="backtest_period", default="1y")
         horizon = horizon_input(key="backtest_horizon")
         selected_indicators = indicator_picker(key="backtest_indicators")
@@ -37,6 +42,8 @@ def render():
     if not selected_indicators:
         st.warning("Select at least one indicator.")
         return
+
+    record_recent_ticker(ticker)
 
     # Fetch data
     try:
@@ -78,16 +85,57 @@ def render():
         st.warning("No trades generated. Try a longer period or different indicators.")
         return
 
+    # Compute benchmark/buy-and-hold returns for context
+    ticker_bh = compute_buy_and_hold(df)
+
+    benchmark_bh = None
+    if ticker.upper() != _DEFAULT_BENCHMARK:
+        try:
+            bench_df = fetch_ohlcv(_DEFAULT_BENCHMARK, period=period)
+            benchmark_bh = compute_buy_and_hold(bench_df)
+        except Exception:
+            pass  # benchmark fetch failed — not critical
+
     # Metrics row
     m1, m2, m3, m4, m5 = st.columns(5)
     m1.metric("Total Trades", report.total_trades)
-    m2.metric("Win Rate", f"{report.win_rate:.1%}")
-    m3.metric("Return", f"{report.cumulative_return:+.1%}")
-    m4.metric("Max Drawdown", f"{report.max_drawdown:.1%}")
-    m5.metric("Sharpe Ratio", f"{report.sharpe_ratio:.2f}")
+    m2.metric("Win Rate", f"{report.win_rate:.1%}",
+              help="Percentage of trades with positive P&L (after costs)")
+    m3.metric("Prediction Accuracy", f"{report.prediction_accuracy:.1%}",
+              help="Percentage of trades where predicted direction matched actual price movement")
+    m4.metric("Return", f"{report.cumulative_return:+.1%}")
+    m5.metric("Max Drawdown", f"{report.max_drawdown:.1%}")
 
+    m6, m7, m8 = st.columns(3)
     pf_display = "No losses" if report.profit_factor == float("inf") else f"{report.profit_factor:.2f}"
-    st.metric("Profit Factor", pf_display)
+    m6.metric("Sharpe Ratio", f"{report.sharpe_ratio:.2f}")
+    m7.metric("Profit Factor", pf_display)
+
+    # Benchmark context
+    if ticker_bh is not None or benchmark_bh is not None:
+        st.markdown("---")
+        st.subheader("vs Buy & Hold")
+        bh_cols = st.columns(3)
+        bh_cols[0].metric(
+            "Strategy Return",
+            f"{report.cumulative_return:+.1%}",
+        )
+        if ticker_bh is not None:
+            alpha = report.cumulative_return - ticker_bh
+            bh_cols[1].metric(
+                f"{ticker} Buy & Hold",
+                f"{ticker_bh:+.1%}",
+                delta=f"{alpha:+.1%} strategy alpha" if alpha != 0 else None,
+                delta_color="normal",
+            )
+        if benchmark_bh is not None:
+            alpha_vs_bench = report.cumulative_return - benchmark_bh
+            bh_cols[2].metric(
+                f"{_DEFAULT_BENCHMARK} Buy & Hold",
+                f"{benchmark_bh:+.1%}",
+                delta=f"{alpha_vs_bench:+.1%} vs market" if alpha_vs_bench != 0 else None,
+                delta_color="normal",
+            )
 
     # Price chart with prediction markers
     computed_df = df.copy()

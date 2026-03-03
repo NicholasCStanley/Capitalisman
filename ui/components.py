@@ -8,6 +8,7 @@ from config.settings import (
     DEFAULT_INITIAL_CAPITAL,
     DEFAULT_PERIOD,
     DEFAULT_PREDICTION_HORIZON,
+    INTRADAY_WARNINGS,
     INTERVALS,
     PERIODS,
 )
@@ -103,3 +104,46 @@ def cost_input(key: str = "cost") -> float:
         key=key,
         help="Round-trip cost per trade (slippage + commission) as a percentage",
     )
+
+
+def show_interval_warning(interval: str) -> None:
+    """Show a warning if the selected interval has data limits."""
+    warning = INTRADAY_WARNINGS.get(interval)
+    if warning:
+        st.caption(f"⚠ {warning}")
+
+
+_MAX_RECENT = 8
+
+
+def record_recent_ticker(ticker: str) -> None:
+    """Add a ticker to the recent tickers list in session state."""
+    if not ticker:
+        return
+    if "recent_tickers" not in st.session_state:
+        st.session_state["recent_tickers"] = []
+    recents = st.session_state["recent_tickers"]
+    # Move to front if already present, otherwise prepend
+    if ticker in recents:
+        recents.remove(ticker)
+    recents.insert(0, ticker)
+    st.session_state["recent_tickers"] = recents[:_MAX_RECENT]
+
+
+def render_recent_tickers(input_key: str) -> None:
+    """Render quick-select buttons for recent tickers.
+
+    When clicked, sets the value of the ticker input identified by input_key.
+    """
+    recents = st.session_state.get("recent_tickers", [])
+    # Don't show the ticker that's currently in the input
+    current = st.session_state.get(input_key, "")
+    visible = [t for t in recents if t != current]
+    if not visible:
+        return
+    st.caption("Recent:")
+    cols = st.columns(min(len(visible), 4))
+    for i, ticker in enumerate(visible[:4]):
+        if cols[i].button(ticker, key=f"recent_{input_key}_{ticker}"):
+            st.session_state[input_key] = ticker
+            st.rerun()

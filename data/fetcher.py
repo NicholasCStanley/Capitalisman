@@ -53,6 +53,27 @@ def fetch_ohlcv(
     return _fetch_raw(ticker, period, interval).copy()
 
 
+def is_crypto_ticker(ticker: str) -> bool:
+    """Heuristic check for crypto tickers (e.g. BTC-USD, ETH-EUR)."""
+    crypto_suffixes = ("-USD", "-USDT", "-EUR", "-GBP", "-BTC", "-ETH", "-BUSD")
+    upper = ticker.upper()
+    return any(upper.endswith(s) for s in crypto_suffixes)
+
+
+def compute_buy_and_hold(df: pd.DataFrame) -> float | None:
+    """Compute buy-and-hold return from the first to last close in a DataFrame.
+
+    Returns the fractional return (e.g. 0.15 for +15%), or None if insufficient data.
+    """
+    if df is None or len(df) < 2:
+        return None
+    first_close = df["Close"].iloc[0]
+    last_close = df["Close"].iloc[-1]
+    if first_close == 0:
+        return None
+    return (last_close - first_close) / first_close
+
+
 @st.cache_data(ttl=CACHE_TTL_SECONDS, show_spinner=False)
 def get_asset_info(ticker: str) -> Optional[dict]:
     """Fetch basic asset info (name, sector, market cap, etc.)."""

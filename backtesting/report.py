@@ -29,16 +29,20 @@ class BacktestReport:
     horizon_days: int
     initial_capital: float
     trades: list[Trade] = field(default_factory=list)
+    is_crypto: bool = False
 
     # Computed metrics
     total_trades: int = 0
-    winning_trades: int = 0
-    losing_trades: int = 0
-    win_rate: float = 0.0
+    winning_trades: int = 0  # trades with positive P&L
+    losing_trades: int = 0   # trades with negative or zero P&L
+    win_rate: float = 0.0    # winning_trades / total_trades
+    correct_predictions: int = 0   # direction prediction matched actual
+    prediction_accuracy: float = 0.0  # correct_predictions / total_trades
     cumulative_return: float = 0.0
     max_drawdown: float = 0.0
     sharpe_ratio: float = 0.0
     profit_factor: float = 0.0
+    benchmark_return: float | None = None  # buy-and-hold return over same period
 
     # Equity curve
     equity_curve: pd.Series = field(default_factory=lambda: pd.Series(dtype=float))
