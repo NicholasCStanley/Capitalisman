@@ -4,7 +4,7 @@ import numpy as np
 import streamlit as st
 
 from charts.plotly_fallback import create_comparison_chart
-from data.fetcher import compute_buy_and_hold, fetch_ohlcv, get_asset_info
+from data.fetcher import compute_buy_and_hold, fetch_with_warmup, get_asset_info
 from indicators.registry import get_all_indicators
 from signals.base import SignalDirection
 from signals.combiner import combine_signals
@@ -56,17 +56,17 @@ def render():
         st.warning("Select at least one indicator.")
         return
 
-    # Fetch data for both tickers
+    # Fetch data for both tickers with warmup
     try:
         with st.spinner(f"Fetching {ticker_a}..."):
-            df_a = fetch_ohlcv(ticker_a, period=period)
+            full_a, display_a = fetch_with_warmup(ticker_a, period=period)
     except ValueError as e:
         st.error(f"{ticker_a}: {e}")
         return
 
     try:
         with st.spinner(f"Fetching {ticker_b}..."):
-            df_b = fetch_ohlcv(ticker_b, period=period)
+            full_b, display_b = fetch_with_warmup(ticker_b, period=period)
     except ValueError as e:
         st.error(f"{ticker_b}: {e}")
         return
@@ -75,19 +75,19 @@ def render():
     info_a = get_asset_info(ticker_a)
     info_b = get_asset_info(ticker_b)
 
-    # Metrics row
+    # Metrics row (use display data for user-facing values)
     st.subheader("Overview")
     col1, col2 = st.columns(2)
 
-    ret_a = compute_buy_and_hold(df_a)
-    ret_b = compute_buy_and_hold(df_b)
+    ret_a = compute_buy_and_hold(display_a)
+    ret_b = compute_buy_and_hold(display_b)
 
     with col1:
         name_a = info_a["name"] if info_a else ticker_a
         sector_a = info_a["sector"] if info_a else "N/A"
         st.metric(
             label=f"{ticker_a} — {name_a}",
-            value=f"${df_a['Close'].iloc[-1]:,.2f}",
+            value=f"${display_a['Close'].iloc[-1]:,.2f}",
             delta=f"{ret_a:+.1%} period return" if ret_a is not None else None,
         )
         st.caption(f"Sector: {sector_a}")
@@ -97,14 +97,14 @@ def render():
         sector_b = info_b["sector"] if info_b else "N/A"
         st.metric(
             label=f"{ticker_b} — {name_b}",
-            value=f"${df_b['Close'].iloc[-1]:,.2f}",
+            value=f"${display_b['Close'].iloc[-1]:,.2f}",
             delta=f"{ret_b:+.1%} period return" if ret_b is not None else None,
         )
         st.caption(f"Sector: {sector_b}")
 
-    # Normalized comparison chart
+    # Normalized comparison chart (display range only)
     st.subheader("Normalized Price Comparison")
-    fig = create_comparison_chart(df_a, df_b, label_a=ticker_a, label_b=ticker_b)
+    fig = create_comparison_chart(display_a, display_b, label_a=ticker_a, label_b=ticker_b)
     st.plotly_chart(fig, use_container_width=True)
 
     # Signal comparison
@@ -114,14 +114,13 @@ def render():
     chosen = {n: all_indicators[n] for n in selected_indicators if n in all_indicators}
 
     try:
-        # Compute indicators and signals for A
-        computed_a = df_a.copy()
+        # Compute indicators and signals on full (warmup) data
+        computed_a = full_a.copy()
         for indicator in chosen.values():
             computed_a = indicator.compute(computed_a)
         signal_a = combine_signals(chosen, computed_a, horizon_days=horizon, precomputed=True)
 
-        # Compute indicators and signals for B
-        computed_b = df_b.copy()
+        computed_b = full_b.copy()
         for indicator in chosen.values():
             computed_b = indicator.compute(computed_b)
         signal_b = combine_signals(chosen, computed_b, horizon_days=horizon, precomputed=True)
@@ -161,8 +160,8 @@ def render():
     # Correlation
     st.subheader("Correlation")
 
-    returns_a = df_a["Close"].pct_change().dropna()
-    returns_b = df_b["Close"].pct_change().dropna()
+    returns_a = display_a["Close"].pct_change().dropna()
+    returns_b = display_b["Close"].pct_change().dropna()
 
     # Inner join on dates to handle different trading calendars
     combined = returns_a.to_frame("A").join(returns_b.to_frame("B"), how="inner").dropna()

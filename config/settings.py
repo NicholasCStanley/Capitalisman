@@ -87,8 +87,45 @@ INDICATOR_CATEGORIES = {
 AMBIGUITY_THRESHOLD = 0.10  # if top two directions within 10%, result is HOLD
 
 # Available data periods and intervals for UI
-PERIODS = ["1mo", "3mo", "6mo", "1y", "2y", "5y", "max"]
+PERIODS = ["1d", "5d", "1wk", "2wk", "1mo", "3mo", "6mo", "1y", "2y", "5y", "max"]
 INTERVALS = ["1m", "5m", "15m", "1h", "1d", "1wk", "1mo"]
+
+# Friendly display labels for period selector
+PERIOD_LABELS = {
+    "1d": "1 Day",
+    "5d": "5 Days",
+    "1wk": "1 Week",
+    "2wk": "2 Weeks",
+    "1mo": "1 Month",
+    "3mo": "3 Months",
+    "6mo": "6 Months",
+    "1y": "1 Year",
+    "2y": "2 Years",
+    "5y": "5 Years",
+    "max": "Max",
+}
+
+# Maps short user-facing periods to longer yfinance fetch periods for indicator warmup.
+# Periods not listed here are fetched as-is (they already have enough data).
+WARMUP_FETCH_PERIOD = {
+    "1d": "3mo",
+    "5d": "3mo",
+    "1wk": "3mo",
+    "2wk": "3mo",
+    "1mo": "6mo",
+    "3mo": "1y",
+}
+
+# Calendar days to keep when trimming warmup data back to display range.
+# Only needed for periods that appear in WARMUP_FETCH_PERIOD.
+PERIOD_CALENDAR_DAYS = {
+    "1d": 1,
+    "5d": 5,
+    "1wk": 7,
+    "2wk": 14,
+    "1mo": 31,
+    "3mo": 93,
+}
 
 # Yahoo Finance intraday data limits (max history available per interval)
 INTRADAY_MAX_PERIODS = {

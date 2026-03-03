@@ -10,6 +10,7 @@ from config.settings import (
     DEFAULT_PREDICTION_HORIZON,
     INTRADAY_WARNINGS,
     INTERVALS,
+    PERIOD_LABELS,
     PERIODS,
 )
 from indicators.registry import get_all_indicators
@@ -28,7 +29,13 @@ def ticker_input(key: str = "ticker") -> str:
 def period_select(key: str = "period", default: str = DEFAULT_PERIOD) -> str:
     """Render period selector."""
     idx = PERIODS.index(default) if default in PERIODS else 3
-    return st.selectbox("Period", PERIODS, index=idx, key=key)
+    return st.selectbox(
+        "Period",
+        PERIODS,
+        index=idx,
+        key=key,
+        format_func=lambda p: PERIOD_LABELS.get(p, p),
+    )
 
 
 def interval_select(key: str = "interval") -> str:

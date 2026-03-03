@@ -3,7 +3,7 @@
 import streamlit as st
 
 from charts.factory import render_price_chart
-from data.fetcher import fetch_ohlcv, get_asset_info
+from data.fetcher import fetch_with_warmup, get_asset_info
 from indicators.registry import get_all_indicators
 from ui.components import (
     check_data_sufficiency,
@@ -35,10 +35,10 @@ def render():
 
     record_recent_ticker(ticker)
 
-    # Fetch data
+    # Fetch data with warmup for short periods
     try:
         with st.spinner("Fetching data..."):
-            df = fetch_ohlcv(ticker, period=period, interval=interval)
+            full_df, display_df = fetch_with_warmup(ticker, period=period, interval=interval)
     except ValueError as e:
         st.error(str(e))
         return
@@ -57,21 +57,21 @@ def render():
         if info.get("52w_low"):
             cols[3].metric("52W Low", f"${info['52w_low']:,.2f}")
 
-    # Check data sufficiency
-    data_warnings = check_data_sufficiency(len(df), selected_indicators)
+    # Check data sufficiency against full (warmup) data
+    data_warnings = check_data_sufficiency(len(full_df), selected_indicators)
     if data_warnings:
         st.warning(
             f"Insufficient data for {len(data_warnings)} indicator(s) "
-            f"({len(df)} bars available):\n\n" + "\n".join(f"- {w}" for w in data_warnings)
+            f"({len(full_df)} bars available):\n\n" + "\n".join(f"- {w}" for w in data_warnings)
             + "\n\nUse a longer period or wider interval for full indicator coverage."
         )
 
     try:
-        # Compute selected indicators
+        # Compute indicators on full data (includes warmup)
         all_indicators = get_all_indicators()
         overlays = []
         subplot_configs = []
-        computed_df = df.copy()
+        computed_df = full_df.copy()
 
         for name in selected_indicators:
             if name not in all_indicators:
@@ -85,9 +85,12 @@ def render():
             else:
                 subplot_configs.append(chart_cfg)
 
-        # Render chart
+        # Trim computed data to display range for charting
+        computed_display = computed_df.iloc[-len(display_df):]
+
+        # Render chart with display-range data only
         render_price_chart(
-            computed_df,
+            computed_display,
             title=f"{ticker} — {period} ({interval})",
             overlays=overlays,
             subplots=subplot_configs,
@@ -97,9 +100,9 @@ def render():
         st.error(f"Error computing indicators or rendering chart: {e}")
         return
 
-    # Raw data table
+    # Raw data table (display range)
     with st.expander("Raw Data", expanded=False):
         st.dataframe(
-            computed_df.tail(100).style.format("{:.2f}", subset=["Open", "High", "Low", "Close"]),
+            computed_display.tail(100).style.format("{:.2f}", subset=["Open", "High", "Low", "Close"]),
             use_container_width=True,
         )

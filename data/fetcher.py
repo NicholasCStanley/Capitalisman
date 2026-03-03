@@ -6,7 +6,13 @@ import pandas as pd
 import streamlit as st
 import yfinance as yf
 
-from config.settings import CACHE_TTL_SECONDS, DEFAULT_INTERVAL, DEFAULT_PERIOD
+from config.settings import (
+    CACHE_TTL_SECONDS,
+    DEFAULT_INTERVAL,
+    DEFAULT_PERIOD,
+    PERIOD_CALENDAR_DAYS,
+    WARMUP_FETCH_PERIOD,
+)
 
 
 @st.cache_data(ttl=CACHE_TTL_SECONDS, show_spinner=False)
@@ -51,6 +57,36 @@ def fetch_ohlcv(
     Raises ValueError if ticker is invalid or no data returned.
     """
     return _fetch_raw(ticker, period, interval).copy()
+
+
+def fetch_with_warmup(
+    ticker: str,
+    period: str = DEFAULT_PERIOD,
+    interval: str = DEFAULT_INTERVAL,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Fetch OHLCV data with extra warmup bars for indicator computation.
+
+    For short display periods, fetches a longer history so indicators have
+    enough data, then trims back to the user's requested display range.
+
+    Returns (full_df, display_df) where:
+      - full_df: all fetched data (use for indicator computation)
+      - display_df: trimmed to the user's requested period (use for charting)
+    """
+    fetch_period = WARMUP_FETCH_PERIOD.get(period, period)
+    full_df = fetch_ohlcv(ticker, period=fetch_period, interval=interval)
+
+    calendar_days = PERIOD_CALENDAR_DAYS.get(period)
+    if calendar_days is not None and len(full_df) > 0:
+        cutoff = full_df.index[-1] - pd.Timedelta(days=calendar_days)
+        display_df = full_df.loc[full_df.index > cutoff]
+        # Ensure we return at least something
+        if display_df.empty:
+            display_df = full_df.iloc[-1:]
+    else:
+        display_df = full_df
+
+    return full_df, display_df
 
 
 def is_crypto_ticker(ticker: str) -> bool:

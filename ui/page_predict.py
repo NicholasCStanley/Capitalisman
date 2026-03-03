@@ -3,7 +3,7 @@
 import streamlit as st
 
 from charts.factory import render_price_chart
-from data.fetcher import fetch_ohlcv
+from data.fetcher import fetch_with_warmup
 from indicators.registry import get_all_indicators
 from signals.base import SignalDirection
 from signals.combiner import combine_signals
@@ -55,10 +55,10 @@ def render():
 
     record_recent_ticker(ticker)
 
-    # Fetch data
+    # Fetch data with warmup for short periods
     try:
         with st.spinner("Fetching data..."):
-            df = fetch_ohlcv(ticker, period=period)
+            full_df, display_df = fetch_with_warmup(ticker, period=period)
     except ValueError as e:
         st.error(str(e))
         return
@@ -67,12 +67,12 @@ def render():
         return
 
     try:
-        # Check data sufficiency
-        data_warnings = check_data_sufficiency(len(df), selected_indicators)
+        # Check data sufficiency against full (warmup) data
+        data_warnings = check_data_sufficiency(len(full_df), selected_indicators)
         if data_warnings:
             st.warning(
                 f"Insufficient data for {len(data_warnings)} indicator(s) "
-                f"({len(df)} bars available):\n\n" + "\n".join(f"- {w}" for w in data_warnings)
+                f"({len(full_df)} bars available):\n\n" + "\n".join(f"- {w}" for w in data_warnings)
                 + "\n\nThese will report HOLD. Use a longer period for full analysis."
             )
 
@@ -80,13 +80,16 @@ def render():
         all_indicators = get_all_indicators()
         chosen = {n: all_indicators[n] for n in selected_indicators if n in all_indicators}
 
-        # Compute indicators
-        computed_df = df.copy()
+        # Compute indicators on full data (includes warmup)
+        computed_df = full_df.copy()
         for name, indicator in chosen.items():
             computed_df = indicator.compute(computed_df)
 
-        # Generate combined signal
+        # Generate combined signal from full data
         signal = combine_signals(chosen, computed_df, horizon_days=horizon, precomputed=True)
+
+        # Trim computed data to display range for charting
+        computed_display = computed_df.iloc[-len(display_df):]
     except Exception as e:
         st.error(f"Error computing signals: {e}")
         return
@@ -140,7 +143,7 @@ def render():
             subplot_configs.append(chart_cfg)
 
     render_price_chart(
-        computed_df,
+        computed_display,
         title=f"{ticker} — Signal: {signal.direction.value}",
         overlays=overlays,
         subplots=subplot_configs,
