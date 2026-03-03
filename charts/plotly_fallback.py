@@ -152,6 +152,63 @@ def create_candlestick_chart(
     return fig
 
 
+def create_comparison_chart(
+    df_a: pd.DataFrame,
+    df_b: pd.DataFrame,
+    label_a: str = "A",
+    label_b: str = "B",
+    height: int = 500,
+) -> go.Figure:
+    """Create a normalized price comparison chart (base 100).
+
+    Both series are normalized so they start at 100, making relative
+    performance directly comparable regardless of absolute price.
+    """
+    norm_a = df_a["Close"] / df_a["Close"].iloc[0] * 100
+    norm_b = df_b["Close"] / df_b["Close"].iloc[0] * 100
+
+    x_a = df_a.index.strftime("%Y-%m-%d") if hasattr(df_a.index, "strftime") else df_a.index
+    x_b = df_b.index.strftime("%Y-%m-%d") if hasattr(df_b.index, "strftime") else df_b.index
+
+    fig = go.Figure()
+
+    fig.add_trace(
+        go.Scatter(
+            x=x_a, y=norm_a, mode="lines", name=label_a,
+            line=dict(color="#2196F3", width=2),
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=x_b, y=norm_b, mode="lines", name=label_b,
+            line=dict(color="#FF9800", width=2),
+        )
+    )
+
+    # Reference line at 100
+    all_dates = sorted(set(list(x_a) + list(x_b)))
+    fig.add_trace(
+        go.Scatter(
+            x=[all_dates[0], all_dates[-1]], y=[100, 100],
+            mode="lines", name="Base (100)",
+            line=dict(color="#888888", width=1, dash="dash"),
+            showlegend=False,
+        )
+    )
+
+    fig.update_layout(
+        title="Normalized Price Comparison (Base 100)",
+        height=height,
+        template="plotly_dark",
+        xaxis_title="Date",
+        yaxis_title="Normalized Price",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        margin=dict(l=50, r=20, t=60, b=40),
+    )
+
+    return fig
+
+
 def create_equity_curve(
     equity: pd.Series,
     title: str = "Equity Curve",

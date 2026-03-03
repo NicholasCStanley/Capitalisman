@@ -13,12 +13,14 @@ st.set_page_config(
 import indicators  # noqa: F401, E402
 
 from ui import page_predict, page_backtest, page_explore  # noqa: E402
+from ui import page_search, page_compare, page_screener  # noqa: E402
 
 # Sidebar navigation
 st.sidebar.title("AutoCapital")
 page = st.sidebar.radio(
     "Navigation",
-    ["Predict", "Backtest", "Explore"],
+    ["Predict", "Backtest", "Explore", "Search", "Compare", "Screener"],
+    key="nav_page",
     label_visibility="collapsed",
 )
 
@@ -30,3 +32,9 @@ elif page == "Backtest":
     page_backtest.render()
 elif page == "Explore":
     page_explore.render()
+elif page == "Search":
+    page_search.render()
+elif page == "Compare":
+    page_compare.render()
+elif page == "Screener":
+    page_screener.render()

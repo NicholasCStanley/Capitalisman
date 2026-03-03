@@ -103,3 +103,12 @@ INTRADAY_WARNINGS = {
     "15m": "15-minute data is limited to the last 60 days regardless of period selected.",
     "1h": "Hourly data is limited to the last 730 days regardless of period selected.",
 }
+
+# Watchlist presets for screener
+WATCHLIST_PRESETS = {
+    "Tech Giants": ["AAPL", "MSFT", "GOOGL", "AMZN", "META", "NVDA", "TSLA"],
+    "S&P 500 Top 10": ["AAPL", "MSFT", "GOOGL", "AMZN", "BRK-B", "UNH", "JNJ", "XOM", "JPM", "V"],
+    "Major Crypto": ["BTC-USD", "ETH-USD", "SOL-USD", "ADA-USD", "XRP-USD", "DOGE-USD", "DOT-USD", "AVAX-USD"],
+    "Indices": ["^GSPC", "^DJI", "^IXIC", "^RUT"],
+    "Custom": [],
+}

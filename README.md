@@ -36,6 +36,23 @@ You'll see:
 
 Backtests include **configurable transaction costs** (slippage and commissions, default 0.1% per trade) so results reflect realistic trading conditions rather than idealized zero-cost scenarios.
 
+### Search — Find Any Ticker
+
+Don't know the exact Yahoo Finance symbol? The Search page lets you type a company name, keyword, or partial symbol and browse matching results. Each result shows the symbol, full name, exchange, and asset type. Click **Analyze** on any result to jump straight to the Predict page with that ticker loaded.
+
+### Compare — Side-by-Side Analysis
+
+Pick two tickers and compare them head-to-head. The Compare page shows:
+
+- **Overview metrics** — name, sector, current price, and period return for each ticker
+- **Normalized price chart** — both tickers rebased to 100 so you can see relative performance regardless of absolute price
+- **Signal comparison** — BUY/SELL/HOLD signal cards for both tickers side by side
+- **Correlation** — daily return correlation to see how closely the two assets move together
+
+### Screener — Scan Multiple Tickers at Once
+
+Select a preset watchlist (Tech Giants, S&P 500 Top 10, Major Crypto, Indices) or enter your own comma-separated list of tickers. Hit **Scan Watchlist** and the tool runs a full signal analysis on every ticker, then ranks the results by confidence. Each result shows price, daily change, signal direction, confidence, and expandable reasoning. Click **View** to jump to the Predict page for any ticker.
+
 ### Explore — Browse Charts and Data
 
 An interactive charting page where you can look at any stock or crypto with professional-style candlestick charts. Toggle different indicator overlays on and off, view company information, and inspect the raw price data.
@@ -66,7 +83,13 @@ This opens the dashboard in your web browser at `http://localhost:8501`. Use the
 
 2. **Run a backtest** — Switch to the Backtest page in the sidebar. Type `AAPL`, pick "1y" (one year) as the period, and keep the 5-day horizon. You'll see how accurate the predictions would have been over the past year.
 
-3. **Explore a chart** — Switch to the Explore page. Try `BTC-USD` (Bitcoin) and toggle different indicators on and off to see how they overlay on the price chart.
+3. **Search for a ticker** — Switch to the Search page. Type "Tesla" and you'll see matching results. Click **Analyze** on `TSLA` to jump to the Predict page with it loaded.
+
+4. **Compare two tickers** — Switch to the Compare page. The defaults are AAPL and MSFT. You'll see a normalized price chart, side-by-side signals, and their correlation.
+
+5. **Screen a watchlist** — Switch to the Screener page. Select "Tech Giants" from the dropdown and click **Scan Watchlist**. You'll get a ranked table of all 7 tickers sorted by signal confidence.
+
+6. **Explore a chart** — Switch to the Explore page. Try `BTC-USD` (Bitcoin) and toggle different indicators on and off to see how they overlay on the price chart.
 
 ### What Tickers Can I Use?
 
@@ -144,6 +167,7 @@ Advanced users can adjust defaults in `config/settings.py`:
 - **Timescale adjustments** — how weights shift for short, medium, and long prediction horizons
 - **Ambiguity threshold** — how close BUY and SELL scores need to be before the result becomes HOLD (default 10%)
 - **Transaction cost** — default round-trip cost percentage for backtests
+- **Watchlist presets** — predefined ticker lists for the Screener (Tech Giants, S&P 500 Top 10, Major Crypto, Indices)
 
 ## Project Structure
 
@@ -152,9 +176,9 @@ Capitalisman/
 ├── app.py                      # App entry point
 ├── requirements.txt            # Python dependencies
 ├── config/
-│   └── settings.py             # All configurable defaults
+│   └── settings.py             # All configurable defaults & watchlist presets
 ├── data/
-│   └── fetcher.py              # Market data fetching with caching
+│   └── fetcher.py              # Market data fetching, search, and caching
 ├── indicators/
 │   ├── base.py                 # Indicator interface
 │   ├── registry.py             # Auto-registration system
@@ -171,13 +195,16 @@ Capitalisman/
 │   └── report.py               # Backtest results structure
 ├── charts/
 │   ├── tradingview.py          # TradingView chart rendering
-│   ├── plotly_fallback.py      # Plotly chart rendering
+│   ├── plotly_fallback.py      # Plotly chart rendering (candlestick, comparison, equity)
 │   └── factory.py              # Auto-selects best chart renderer
 └── ui/
     ├── components.py           # Shared sidebar controls
     ├── page_predict.py         # Predict page
     ├── page_backtest.py        # Backtest page
-    └── page_explore.py         # Explore page
+    ├── page_explore.py         # Explore page
+    ├── page_search.py          # Search page
+    ├── page_compare.py         # Compare page
+    └── page_screener.py        # Screener page
 ```
 
 ## Dependencies

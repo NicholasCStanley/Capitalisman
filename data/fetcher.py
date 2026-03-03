@@ -74,6 +74,31 @@ def compute_buy_and_hold(df: pd.DataFrame) -> float | None:
     return (last_close - first_close) / first_close
 
 
+@st.cache_data(ttl=60, show_spinner=False)
+def search_tickers(query: str) -> list[dict]:
+    """Search for tickers using Yahoo Finance search API.
+
+    Returns list of dicts with keys: symbol, name, exchange, type.
+    """
+    if not query or not query.strip():
+        return []
+    try:
+        results = yf.Search(query)
+        quotes = results.quotes if hasattr(results, "quotes") else []
+        return [
+            {
+                "symbol": q.get("symbol", ""),
+                "name": q.get("shortname") or q.get("longname", ""),
+                "exchange": q.get("exchange", ""),
+                "type": q.get("quoteType", ""),
+            }
+            for q in quotes
+            if q.get("symbol")
+        ]
+    except Exception:
+        return []
+
+
 @st.cache_data(ttl=CACHE_TTL_SECONDS, show_spinner=False)
 def get_asset_info(ticker: str) -> Optional[dict]:
     """Fetch basic asset info (name, sector, market cap, etc.)."""
