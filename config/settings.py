@@ -45,6 +45,12 @@ INDICATOR_WEIGHTS = {
     "Bollinger Bands": 0.9,
     "VWAP": 0.8,
     "OBV": 0.7,
+    # Novel indicators — cross-asset & structural
+    "Copper-Gold Ratio": 0.9,
+    "VIX Term Structure": 1.0,
+    "Bubble Risk": 1.1,
+    "VPIN": 0.9,
+    "Market Correlation": 0.8,
 }
 
 # Timescale weight adjustments
@@ -55,18 +61,30 @@ TIMESCALE_ADJUSTMENTS = {
         "momentum": 1.4,
         "volatility": 1.2,
         "volume": 1.0,
+        "macro": 0.5,        # macro signals are slow-moving, less useful short-term
+        "structural": 0.6,   # bubble risk is medium/long-term
+        "microstructure": 1.5,  # VPIN is most useful for short-term prediction
+        "systemic": 0.6,     # systemic risk is a slow-burning signal
     },
     "medium": {  # 4-10 days
         "trend": 1.0,
         "momentum": 1.0,
         "volatility": 1.0,
         "volume": 1.0,
+        "macro": 1.0,
+        "structural": 1.0,
+        "microstructure": 1.0,
+        "systemic": 1.0,
     },
     "long": {  # > 10 days
         "trend": 1.4,
         "momentum": 0.7,
         "volatility": 0.8,
         "volume": 1.0,
+        "macro": 1.5,        # macro regime is a strong long-term signal
+        "structural": 1.4,   # bubble detection matters most over weeks/months
+        "microstructure": 0.5,  # flow toxicity fades quickly
+        "systemic": 1.3,     # systemic fragility compounds over time
     },
 }
 
@@ -81,6 +99,11 @@ INDICATOR_CATEGORIES = {
     "Bollinger Bands": "volatility",
     "VWAP": "volume",
     "OBV": "volume",
+    "Copper-Gold Ratio": "macro",
+    "VIX Term Structure": "macro",
+    "Bubble Risk": "structural",
+    "VPIN": "microstructure",
+    "Market Correlation": "systemic",
 }
 
 # Signal combination

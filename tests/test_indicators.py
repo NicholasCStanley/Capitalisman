@@ -16,7 +16,10 @@ class TestAllIndicators:
         return get_all_indicators()[request.param]
 
     def test_has_valid_category(self, indicator):
-        assert indicator.category in ("trend", "momentum", "volatility", "volume")
+        assert indicator.category in (
+            "trend", "momentum", "volatility", "volume",
+            "macro", "structural", "microstructure", "systemic",
+        )
 
     def test_positive_lookback(self, indicator):
         assert indicator.lookback > 0
@@ -180,3 +183,128 @@ class TestOBV:
         result = obv.compute(ohlcv_200_up)
         assert "OBV" in result.columns
         assert "OBV_SMA" in result.columns
+
+
+# --- Novel indicator tests ---
+
+
+class TestCopperGoldRatio:
+    def test_compute_adds_columns(self, ohlcv_200_up):
+        from indicators.macro import CopperGoldRatio
+        cg = CopperGoldRatio()
+        result = cg.compute(ohlcv_200_up)
+        assert "CG_ratio" in result.columns
+        assert "CG_SMA_short" in result.columns
+        assert "CG_SMA_long" in result.columns
+        assert "CG_roc" in result.columns
+
+    def test_signal_returns_valid_result(self, ohlcv_200_up):
+        from indicators.macro import CopperGoldRatio
+        cg = CopperGoldRatio()
+        result = cg.compute(ohlcv_200_up)
+        signal = cg.get_signal(result)
+        assert isinstance(signal, SignalResult)
+        assert signal.indicator_name == "Copper-Gold Ratio"
+
+
+class TestVIXTermStructure:
+    def test_compute_adds_columns(self, ohlcv_200_up):
+        from indicators.macro import VIXTermStructure
+        vts = VIXTermStructure()
+        result = vts.compute(ohlcv_200_up)
+        assert "VIX" in result.columns
+        assert "VIX3M" in result.columns
+        assert "VIX_spread" in result.columns
+        assert "VIX_ratio" in result.columns
+
+    def test_signal_returns_valid_result(self, ohlcv_200_up):
+        from indicators.macro import VIXTermStructure
+        vts = VIXTermStructure()
+        result = vts.compute(ohlcv_200_up)
+        signal = vts.get_signal(result)
+        assert isinstance(signal, SignalResult)
+        assert signal.indicator_name == "VIX Term Structure"
+
+
+class TestBubbleRisk:
+    def test_compute_adds_columns(self, ohlcv_200_up):
+        from indicators.structural import BubbleRisk
+        br = BubbleRisk()
+        result = br.compute(ohlcv_200_up)
+        assert "Hurst" in result.columns
+        assert "LogAccel" in result.columns
+        assert "BubbleScore" in result.columns
+
+    def test_hurst_in_valid_range(self, ohlcv_200_up):
+        from indicators.structural import BubbleRisk
+        br = BubbleRisk()
+        result = br.compute(ohlcv_200_up)
+        valid = result["Hurst"].dropna()
+        if len(valid) > 0:
+            assert (valid >= 0).all() and (valid <= 1).all()
+
+    def test_bubble_score_in_valid_range(self, ohlcv_200_up):
+        from indicators.structural import BubbleRisk
+        br = BubbleRisk()
+        result = br.compute(ohlcv_200_up)
+        valid = result["BubbleScore"].dropna()
+        if len(valid) > 0:
+            assert (valid >= 0).all() and (valid <= 1.1).all()
+
+    def test_signal_returns_valid_result(self, ohlcv_200_up):
+        from indicators.structural import BubbleRisk
+        br = BubbleRisk()
+        result = br.compute(ohlcv_200_up)
+        signal = br.get_signal(result)
+        assert isinstance(signal, SignalResult)
+        assert signal.indicator_name == "Bubble Risk"
+
+
+class TestVPIN:
+    def test_compute_adds_columns(self, ohlcv_200_up):
+        from indicators.microstructure import VPIN
+        vpin = VPIN()
+        result = vpin.compute(ohlcv_200_up)
+        assert "VPIN" in result.columns
+        assert "BuyVolPct" in result.columns
+
+    def test_vpin_in_valid_range(self, ohlcv_200_up):
+        from indicators.microstructure import VPIN
+        vpin = VPIN()
+        result = vpin.compute(ohlcv_200_up)
+        valid = result["VPIN"].dropna()
+        if len(valid) > 0:
+            assert (valid >= 0).all() and (valid <= 1).all()
+
+    def test_buy_vol_pct_in_valid_range(self, ohlcv_200_up):
+        from indicators.microstructure import VPIN
+        vpin = VPIN()
+        result = vpin.compute(ohlcv_200_up)
+        valid = result["BuyVolPct"].dropna()
+        if len(valid) > 0:
+            assert (valid >= 0).all() and (valid <= 1).all()
+
+    def test_signal_returns_valid_result(self, ohlcv_200_up):
+        from indicators.microstructure import VPIN
+        vpin = VPIN()
+        result = vpin.compute(ohlcv_200_up)
+        signal = vpin.get_signal(result)
+        assert isinstance(signal, SignalResult)
+        assert signal.indicator_name == "VPIN"
+
+
+class TestMarketCorrelation:
+    def test_compute_adds_columns(self, ohlcv_200_up):
+        from indicators.systemic import MarketCorrelation
+        mc = MarketCorrelation()
+        result = mc.compute(ohlcv_200_up)
+        assert "AbsorptionRatio" in result.columns
+        assert "TopEigenvalue" in result.columns
+
+    def test_signal_returns_valid_result(self, ohlcv_200_up):
+        from indicators.systemic import MarketCorrelation
+        mc = MarketCorrelation()
+        result = mc.compute(ohlcv_200_up)
+        signal = mc.get_signal(result)
+        assert isinstance(signal, SignalResult)
+        assert signal.indicator_name == "Market Correlation"

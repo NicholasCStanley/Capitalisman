@@ -4,7 +4,7 @@
   <img src="Capitalisman.png" alt="Capitalisman" width="400">
 </p>
 
-A personal stock and crypto prediction tool that helps you make more informed trading decisions. It analyzes price data using proven technical indicators, combines their signals into a single BUY/SELL/HOLD recommendation with a confidence score, and lets you test how well those predictions would have performed on real historical data — all through an easy-to-use web dashboard.
+A personal stock and crypto prediction tool that helps you make more informed trading decisions. It analyzes price data using classical technical indicators **and novel cross-asset, structural, and microstructure signals**, combines them into a single BUY/SELL/HOLD recommendation with a confidence score, and lets you test how well those predictions would have performed on real historical data — all through an easy-to-use web dashboard.
 
 No API keys, no account signups, and no trading experience required to get started.
 
@@ -12,7 +12,7 @@ No API keys, no account signups, and no trading experience required to get start
 
 ### Predict — Get a Signal for Any Stock or Crypto
 
-Pick a ticker (like `AAPL` for Apple, or `BTC-USD` for Bitcoin) and a time horizon (how many days ahead you want to predict). The tool runs 9 different technical analyses on the price data and combines them into one clear recommendation:
+Pick a ticker (like `AAPL` for Apple, or `BTC-USD` for Bitcoin) and a time horizon (how many days ahead you want to predict). The tool runs 14 different analyses — spanning classical technical indicators, macroeconomic regime signals, bubble detection, order-flow toxicity, and systemic risk — and combines them into one clear recommendation:
 
 - **BUY** — indicators suggest the price is likely to go up
 - **SELL** — indicators suggest the price is likely to go down
@@ -109,7 +109,7 @@ Anything available on Yahoo Finance:
 
 ## Technical Indicators
 
-The tool uses 9 indicators across 4 categories. Each one looks at a different aspect of price behavior:
+The tool uses 14 indicators across 8 categories. The first 9 are classical technical indicators that analyze the ticker's own price and volume data. The remaining 5 are novel signals that draw on cross-asset data, statistical physics, market microstructure, and systemic risk research.
 
 ### Trend Indicators — "Which direction is the price moving?"
 
@@ -140,6 +140,33 @@ The tool uses 9 indicators across 4 categories. Each one looks at a different as
 | **VWAP** (20-day rolling) | Volume-Weighted Average Price — the average price weighted by how much was traded at each level over a rolling 20-day window. Price above VWAP suggests bullish sentiment; below suggests bearish. |
 | **OBV** | On-Balance Volume — tracks cumulative volume flow. If the price is falling but volume is rising (positive divergence), it may signal an upcoming reversal (BUY). |
 
+### Macro Regime Indicators — "What is the broader economic environment signaling?"
+
+These indicators fetch cross-asset data automatically to gauge market-wide conditions. Their signals apply to all equities.
+
+| Indicator | What It Does |
+|---|---|
+| **Copper-Gold Ratio** | Divides the copper futures price (industrial demand proxy) by the gold futures price (safe-haven proxy). A rising ratio signals economic expansion (BUY); a falling ratio signals contraction and flight-to-safety (SELL). The ratio is compared against its 50-day and 200-day moving averages to determine trend direction. Research shows this ratio is a leading indicator for 3–12 month equity returns. |
+| **VIX Term Structure** | Compares the near-term VIX (^VIX) to the 3-month VIX (^VIX3M). When near-term VIX exceeds the 3-month VIX (backwardation), markets are in acute stress — historically a precursor to further equity downside (SELL). Normal contango (VIX < VIX3M) signals relative calm (mild BUY). Extreme complacency (very low VIX with deep contango) is flagged as a potential reversal risk. |
+
+### Structural Indicators — "Is the price in a bubble?"
+
+| Indicator | What It Does |
+|---|---|
+| **Bubble Risk** | Detects super-exponential growth patterns characteristic of speculative bubbles. Combines two measures: the **Hurst exponent** (persistence of returns via Rescaled Range analysis — values above 0.5 indicate trending, above 0.7 indicate potential bubble behavior) and **log-price acceleration** (positive curvature in log-price space signals faster-than-exponential growth). The composite bubble score ranges 0–1; scores above 0.35 warrant caution and above 0.6 indicate elevated bubble risk (SELL). Inspired by LPPLS (Log-Periodic Power Law Singularity) research. |
+
+### Microstructure Indicators — "What is the smart money doing?"
+
+| Indicator | What It Does |
+|---|---|
+| **VPIN** (Flow Toxicity) | Volume-Synchronized Probability of Informed Trading — measures order-flow toxicity using Bulk Volume Classification. Each bar's volume is partitioned into buy-initiated and sell-initiated components using the normalized price change within the bar. The rolling absolute imbalance between buy and sell volume is then z-scored against its own recent history. High VPIN (>2σ above mean) signals extreme informed-trading activity and reliably predicts imminent volatility spikes (SELL). Low VPIN signals calm, uninformed flow (mild BUY). Based on Easley, López de Prado & O'Hara (2012). |
+
+### Systemic Risk Indicators — "Is the market structurally fragile?"
+
+| Indicator | What It Does |
+|---|---|
+| **Market Correlation** (Absorption Ratio) | Tracks the interconnectedness of 11 S&P 500 sector ETFs using eigenvalue analysis of the rolling 60-day correlation matrix. The absorption ratio is the fraction of total market variance captured by the first eigenvalue. When it's high (>0.5), cross-sector correlations are elevated, diversification is breaking down, and the probability of a correlated selloff is elevated (SELL). Low absorption ratios indicate healthy diversification (mild BUY). Based on Kritzman, Li, Page & Rigobon (2011). |
+
 ## How Predictions Work
 
 The tool doesn't rely on any single indicator. Instead, it combines all selected indicators using a weighted voting system:
@@ -148,7 +175,7 @@ The tool doesn't rely on any single indicator. Instead, it combines all selected
 
 2. **Votes are weighted** — some indicators carry more weight than others. For example, MACD (weight 1.2) has slightly more influence than OBV (weight 0.7).
 
-3. **Weights adapt to your time horizon** — if you're predicting 1–3 days ahead, momentum indicators (RSI, Stochastic) get boosted because they're better at short-term signals. For predictions beyond 10 days, trend indicators (SMA, EMA, MACD) get boosted instead.
+3. **Weights adapt to your time horizon** — if you're predicting 1–3 days ahead, momentum indicators and VPIN get boosted because they're better at short-term signals. For predictions beyond 10 days, trend indicators, macro regime signals, and bubble risk get boosted instead. Each of the 8 indicator categories has its own timescale profile.
 
 4. **Only BUY and SELL compete** — indicators that vote HOLD are recorded but don't influence the directional outcome. The direction with the highest weighted score wins.
 
@@ -205,10 +232,15 @@ Capitalisman/
 ├── indicators/
 │   ├── base.py                 # Indicator interface
 │   ├── registry.py             # Auto-registration system
+│   ├── _utils.py               # Cross-asset data fetching & date alignment utilities
 │   ├── trend.py                # SMA, EMA, MACD, ADX
 │   ├── momentum.py             # RSI, Stochastic
 │   ├── volatility.py           # Bollinger Bands
-│   └── volume.py               # VWAP, OBV
+│   ├── volume.py               # VWAP, OBV
+│   ├── macro.py                # Copper-Gold Ratio, VIX Term Structure
+│   ├── structural.py           # Bubble Risk (Hurst + log-price acceleration)
+│   ├── microstructure.py       # VPIN (flow toxicity via Bulk Volume Classification)
+│   └── systemic.py             # Market Correlation (absorption ratio via eigenvalue analysis)
 ├── signals/
 │   ├── base.py                 # Signal data types
 │   └── combiner.py             # Weighted voting combiner
@@ -243,10 +275,11 @@ Installed automatically via `pip install -r requirements.txt`:
 | Package | Purpose |
 |---|---|
 | `streamlit` | Web dashboard framework |
-| `yfinance` | Free market data from Yahoo Finance |
+| `yfinance` | Free market data from Yahoo Finance (price data, cross-asset reference data) |
 | `ta` | Technical indicator calculations |
 | `plotly` | Interactive charts |
 | `pandas` / `numpy` | Data processing |
+| `scipy` | Scientific computing (used by novel indicators for statistical functions) |
 | `lightweight-charts` | TradingView-style charts (optional — the app automatically falls back to Plotly if not installed) |
 | `pytest` | Unit testing framework (development only) |
 
@@ -258,8 +291,22 @@ The project includes a test suite covering indicators, signal combination, backt
 python -m pytest tests/ -v
 ```
 
-Tests use synthetic OHLCV data (no network calls or API keys required) and run in under a second.
+Tests use synthetic OHLCV data and run in about 10 seconds. Cross-asset indicators (Copper-Gold Ratio, VIX Term Structure, Market Correlation) will attempt to fetch live reference data during tests; if the network is unavailable, they gracefully fall back to HOLD signals with zero confidence.
+
+## Adding Your Own Indicators
+
+The indicator system uses a plugin architecture. To add a new indicator:
+
+1. Create a class that extends `BaseIndicator` (in `indicators/base.py`)
+2. Implement `name`, `category`, `lookback`, `compute()`, `get_signal()`, and `get_chart_config()`
+3. Decorate it with `@register` from `indicators/registry.py`
+4. Import the module in `indicators/__init__.py`
+5. Add entries to `INDICATOR_WEIGHTS`, `INDICATOR_CATEGORIES`, and `TIMESCALE_ADJUSTMENTS` in `config/settings.py`
+
+The indicator is then automatically available in all pages (Predict, Backtest, Explore, Screener) with no further wiring needed.
+
+For indicators that need data from other tickers (like the macro and systemic indicators), use the helpers in `indicators/_utils.py` — `fetch_reference_close()` provides cached fetching, and `align_to_index()` handles timezone-safe date alignment.
 
 ## Disclaimer
 
-This tool is for **educational and personal research purposes only**. It is not financial advice. Technical indicators are backward-looking tools that analyze past price patterns — they cannot predict the future with certainty. Past performance of backtested strategies does not guarantee future results. Always do your own research before making investment decisions.
+This tool is for **educational and personal research purposes only**. It is not financial advice. Technical indicators are backward-looking tools that analyze past price patterns — they cannot predict the future with certainty. The novel indicators (macro regime, bubble risk, VPIN, systemic correlation) incorporate cross-asset and statistical signals that go beyond simple price pattern analysis, but they are still fallible and should not be used as the sole basis for trading decisions. Past performance of backtested strategies does not guarantee future results. Always do your own research before making investment decisions.
