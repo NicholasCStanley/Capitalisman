@@ -1,7 +1,12 @@
 # Capitalisman
 
 <p align="center">
-  <img src="Capitalisman.png" alt="Capitalisman" width="400">
+  <img
+    src="Capitalisman.png"
+    alt="Capitalisman pixel-art logo: a financial divination wheel surrounded by lunar phases"
+    title="Capitalisman"
+    width="400"
+  >
 </p>
 
 A personal stock and crypto research tool that analyzes price data using classical technical indicators **and novel cross-asset, structural, and microstructure signals**, combines them into a BUY/SELL/HOLD research signal with a directional-agreement score, and lets you evaluate those signals on historical data through a web dashboard.
@@ -257,7 +262,11 @@ Advanced users can adjust defaults in `config/settings.py`:
 ```
 Capitalisman/
 ├── app.py                      # App entry point
-├── requirements.txt            # Python dependencies
+├── Capitalisman.png            # Project logo and README artwork
+├── ROADMAP.md                  # Reserved plans for future development
+├── requirements.txt            # Core Python dependencies
+├── requirements-optional.txt   # Optional integrations and charting dependencies
+├── requirements-dev.txt        # Development and test dependencies
 ├── config/
 │   ├── settings.py             # All configurable defaults & watchlist presets
 │   └── overrides.py            # Session-scoped settings override system
