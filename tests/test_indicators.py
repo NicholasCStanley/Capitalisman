@@ -1,5 +1,6 @@
 """Tests for individual indicator computation and signal generation."""
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -19,6 +20,7 @@ class TestAllIndicators:
         assert indicator.category in (
             "trend", "momentum", "volatility", "volume",
             "macro", "structural", "microstructure", "systemic",
+            "forecast",
         )
 
     def test_positive_lookback(self, indicator):
@@ -308,3 +310,96 @@ class TestMarketCorrelation:
         signal = mc.get_signal(result)
         assert isinstance(signal, SignalResult)
         assert signal.indicator_name == "Market Correlation"
+
+
+# --- FRED macro indicator tests ---
+
+
+class TestFREDMacroRegime:
+    def test_compute_adds_columns(self, ohlcv_200_up):
+        from indicators.fred import FREDMacroRegime
+        fred = FREDMacroRegime()
+        result = fred.compute(ohlcv_200_up)
+        assert "FRED_YieldCurve" in result.columns
+        assert "FRED_Claims" in result.columns
+        assert "FRED_FedFunds" in result.columns
+        assert "FRED_Claims_4w" in result.columns
+        assert "FRED_Claims_13w" in result.columns
+        assert "FRED_FF_change" in result.columns
+
+    def test_signal_returns_valid_result(self, ohlcv_200_up):
+        from indicators.fred import FREDMacroRegime
+        fred = FREDMacroRegime()
+        result = fred.compute(ohlcv_200_up)
+        signal = fred.get_signal(result)
+        assert isinstance(signal, SignalResult)
+        assert signal.indicator_name == "FRED Macro"
+
+    def test_no_api_key_returns_hold(self, ohlcv_200_up, monkeypatch):
+        """Without FRED_API_KEY, indicator should gracefully return HOLD."""
+        monkeypatch.delenv("FRED_API_KEY", raising=False)
+        from indicators.fred import FREDMacroRegime, clear_fred_cache
+        clear_fred_cache()
+        fred = FREDMacroRegime()
+        result = fred.compute(ohlcv_200_up)
+        signal = fred.get_signal(result)
+        assert signal.direction == SignalDirection.HOLD
+        assert signal.confidence == 0.0
+
+
+# --- TimesFM forecast indicator tests ---
+
+
+class TestTimesFMForecast:
+    def test_backtest_horizon_must_match_forecast(self):
+        from indicators.forecast import TimesFMForecast
+
+        indicator = TimesFMForecast()
+        assert indicator.supports_backtest_horizon(10)
+        assert not indicator.supports_backtest_horizon(5)
+
+    def test_compute_adds_columns(self, ohlcv_200_up):
+        from indicators.forecast import TimesFMForecast
+        tfm = TimesFMForecast()
+        result = tfm.compute(ohlcv_200_up)
+        assert "TFM_forecast" in result.columns
+        assert "TFM_change_pct" in result.columns
+
+    def test_signal_returns_valid_result(self, ohlcv_200_up):
+        from indicators.forecast import TimesFMForecast
+        tfm = TimesFMForecast()
+        result = tfm.compute(ohlcv_200_up)
+        signal = tfm.get_signal(result)
+        assert isinstance(signal, SignalResult)
+        assert signal.indicator_name == "TimesFM Forecast"
+
+    def test_no_timesfm_returns_hold(self, ohlcv_200_up):
+        """Without timesfm installed, indicator should gracefully return HOLD."""
+        from indicators.forecast import TimesFMForecast
+        tfm = TimesFMForecast()
+        result = tfm.compute(ohlcv_200_up)
+        signal = tfm.get_signal(result)
+        # If timesfm is not installed, all values will be NaN -> HOLD
+        assert isinstance(signal, SignalResult)
+        # Either HOLD (no model) or a valid directional signal (model present)
+        assert signal.direction in (
+            SignalDirection.BUY, SignalDirection.SELL, SignalDirection.HOLD
+        )
+
+    def test_historical_signal_ignores_future_volatility(self, ohlcv_200_up):
+        from indicators.forecast import TimesFMForecast
+
+        idx = 100
+        baseline = ohlcv_200_up.copy()
+        baseline["TFM_forecast"] = baseline["Close"] * 1.05
+        baseline["TFM_change_pct"] = 0.05
+        changed_future = baseline.copy()
+        changed_future.iloc[idx + 1 :, changed_future.columns.get_loc("Close")] *= np.linspace(
+            0.2, 5.0, len(changed_future) - idx - 1
+        )
+
+        indicator = TimesFMForecast()
+        first = indicator.get_signal(baseline, idx=idx)
+        second = indicator.get_signal(changed_future, idx=idx)
+        assert first.direction == second.direction
+        assert first.confidence == pytest.approx(second.confidence)

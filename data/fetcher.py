@@ -89,6 +89,29 @@ def fetch_with_warmup(
     return full_df, display_df
 
 
+def trim_to_period(df: pd.DataFrame, period: str) -> pd.DataFrame:
+    """Trim warmup data to the requested user-facing period."""
+    calendar_days = PERIOD_CALENDAR_DAYS.get(period)
+    if calendar_days is None or df.empty:
+        return df.copy()
+    cutoff = df.index[-1] - pd.Timedelta(days=calendar_days)
+    trimmed = df.loc[df.index >= cutoff]
+    return trimmed.copy()
+
+
+def slice_date_range(
+    df: pd.DataFrame,
+    start: pd.Timestamp,
+    end: pd.Timestamp,
+) -> pd.DataFrame:
+    """Slice by calendar date while tolerating timezone differences."""
+    if df.empty:
+        return df.copy()
+    index_dates = pd.Index(df.index.date)
+    mask = (index_dates >= start.date()) & (index_dates <= end.date())
+    return df.loc[mask].copy()
+
+
 def is_crypto_ticker(ticker: str) -> bool:
     """Heuristic check for crypto tickers (e.g. BTC-USD, ETH-EUR)."""
     crypto_suffixes = ("-USD", "-USDT", "-EUR", "-GBP", "-BTC", "-ETH", "-BUSD")
@@ -108,6 +131,17 @@ def compute_buy_and_hold(df: pd.DataFrame) -> float | None:
     if first_close == 0:
         return None
     return (last_close - first_close) / first_close
+
+
+def compute_open_to_close_return(df: pd.DataFrame) -> float | None:
+    """Compute return from the first bar's open to the last bar's close."""
+    if df is None or len(df) < 2:
+        return None
+    entry_price = df["Open"].iloc[0]
+    exit_price = df["Close"].iloc[-1]
+    if entry_price == 0:
+        return None
+    return (exit_price - entry_price) / entry_price
 
 
 @st.cache_data(ttl=60, show_spinner=False)

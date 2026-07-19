@@ -53,7 +53,9 @@ def render():
                 placeholder="AAPL, MSFT, GOOGL",
                 key="screener_custom",
             )
-            tickers = [t.strip().upper() for t in custom_input.split(",") if t.strip()]
+            tickers = list(dict.fromkeys(
+                t.strip().upper() for t in custom_input.split(",") if t.strip()
+            ))
 
             # Save watchlist controls
             if tickers:
@@ -95,6 +97,7 @@ def render():
         chosen = {n: all_indicators[n] for n in selected_indicators if n in all_indicators}
 
         results = []
+        failures = []
         progress = st.progress(0, text="Scanning...")
 
         for i, ticker in enumerate(tickers):
@@ -122,8 +125,8 @@ def render():
                     "reasoning": signal.reasoning,
                     "scores": signal.scores,
                 })
-            except Exception:
-                continue
+            except Exception as error:
+                failures.append(f"{ticker}: {error}")
 
         progress.empty()
 
@@ -134,14 +137,40 @@ def render():
         # Sort by confidence descending
         results.sort(key=lambda r: r["confidence"], reverse=True)
         st.session_state["screener_results"] = results
+        st.session_state["screener_failures"] = failures
+        st.session_state["screener_params"] = {
+            "tickers": tickers,
+            "horizon": horizon,
+            "indicators": selected_indicators,
+        }
 
     # Display results
+    current_params = {
+        "tickers": tickers,
+        "horizon": horizon,
+        "indicators": selected_indicators,
+    }
     results = st.session_state.get("screener_results")
+    if st.session_state.get("screener_params") != current_params:
+        results = None
     if not results:
         st.info("Click **Scan Watchlist** to analyze tickers.")
         return
 
-    st.markdown(f"**{len(results)} results** — sorted by confidence")
+    failures = st.session_state.get("screener_failures", [])
+    if failures:
+        with st.expander(f"{len(failures)} ticker(s) could not be scanned"):
+            for failure in failures:
+                st.write(failure)
+
+    st.markdown(f"**{len(results)} results** — sorted by directional agreement")
+
+    header_cols = st.columns([2, 2, 1.5, 1, 1])
+    for column, label in zip(
+        header_cols,
+        ["Ticker", "Price / Change", "Signal", "Agreement", "Action"],
+    ):
+        column.caption(label)
 
     for i, r in enumerate(results):
         color = _signal_color(r["direction"])
@@ -187,10 +216,9 @@ def render():
         with st.expander(f"Reasoning — {r['ticker']}", expanded=False):
             st.write(r["reasoning"])
             scores = r["scores"]
-            sc1, sc2, sc3 = st.columns(3)
+            sc1, sc2 = st.columns(2)
             sc1.metric("BUY", f"{scores.get('BUY', 0):.2f}")
             sc2.metric("SELL", f"{scores.get('SELL', 0):.2f}")
-            sc3.metric("HOLD", f"{scores.get('HOLD', 0):.2f}")
 
         if i < len(results) - 1:
             st.divider()
@@ -206,10 +234,9 @@ def render():
             "Price": r["price"],
             "Change %": r["change_pct"],
             "Signal": r["direction"].value,
-            "Confidence": r["confidence"],
+            "Directional Agreement": r["confidence"],
             "BUY Score": r["scores"].get("BUY", 0),
             "SELL Score": r["scores"].get("SELL", 0),
-            "HOLD Score": r["scores"].get("HOLD", 0),
             "Reasoning": r["reasoning"],
         })
     csv_string = pd.DataFrame(csv_rows).to_csv(index=False)

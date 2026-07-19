@@ -14,7 +14,11 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from indicators._utils import align_to_index, fetch_reference_close
+from indicators._utils import (
+    align_to_index,
+    fetch_reference_close,
+    reference_period_for_index,
+)
 from indicators.base import BaseIndicator
 from indicators.registry import register
 from signals.base import SignalDirection, SignalResult
@@ -30,8 +34,9 @@ def _fetch_sector_returns(target_index: pd.DatetimeIndex) -> "pd.DataFrame | Non
     """Fetch daily returns for sector ETFs aligned to the target index."""
     sector_closes: dict[str, pd.Series] = {}
 
+    reference_period = reference_period_for_index(target_index)
     for etf in SECTOR_ETFS:
-        closes = fetch_reference_close(etf, period="2y")
+        closes = fetch_reference_close(etf, period=reference_period)
         if closes is not None:
             aligned = align_to_index(closes, target_index)
             sector_closes[etf] = aligned

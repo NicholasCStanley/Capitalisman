@@ -7,8 +7,43 @@ import pytest
 from backtesting.engine import run_backtest
 from backtesting.metrics import compute_metrics
 from backtesting.report import BacktestReport, Trade
+from indicators.base import BaseIndicator
 from indicators.registry import get_all_indicators
+from signals.base import SignalDirection, SignalResult
 from tests.conftest import make_ohlcv
+
+
+class AlwaysBuyIndicator(BaseIndicator):
+    @property
+    def name(self):
+        return "Always Buy"
+
+    @property
+    def category(self):
+        return "trend"
+
+    @property
+    def lookback(self):
+        return 1
+
+    def compute(self, df):
+        return df.copy()
+
+    def get_signal(self, df, idx=-1):
+        return SignalResult(self.name, SignalDirection.BUY, 1.0, "Test signal")
+
+    def get_chart_config(self):
+        return {"overlay": True, "columns": [], "colors": {}}
+
+
+class UnsafeAlwaysBuyIndicator(AlwaysBuyIndicator):
+    @property
+    def name(self):
+        return "Unsafe Always Buy"
+
+    @property
+    def backtest_safe(self):
+        return False
 
 
 class TestRunBacktest:
@@ -62,6 +97,46 @@ class TestRunBacktest:
         if report_no_cost.trades and report_with_cost.trades:
             # Same first trade should have lower PnL with cost
             assert report_with_cost.trades[0].pnl_pct < report_no_cost.trades[0].pnl_pct
+
+    def test_evaluation_start_bounds_trades(self):
+        df = make_ohlcv(120, trend="up")
+        evaluation_start = df.index[80]
+        report = run_backtest(
+            df,
+            {"Always Buy": AlwaysBuyIndicator()},
+            ticker="TEST",
+            period="1mo",
+            horizon_days=2,
+            evaluation_start=evaluation_start,
+        )
+        assert report.trades
+        assert report.trades[0].entry_date >= evaluation_start
+
+    def test_signal_enters_at_next_bar_open(self):
+        df = make_ohlcv(90, trend="up")
+        evaluation_start = df.index[60]
+        df.loc[evaluation_start, "Open"] = 123.45
+        report = run_backtest(
+            df,
+            {"Always Buy": AlwaysBuyIndicator()},
+            ticker="TEST",
+            period="1mo",
+            horizon_days=2,
+            evaluation_start=evaluation_start,
+        )
+        assert report.trades[0].entry_date == evaluation_start
+        assert report.trades[0].entry_price == pytest.approx(123.45)
+
+    def test_unsafe_indicators_are_excluded(self):
+        df = make_ohlcv(90, trend="up")
+        report = run_backtest(
+            df,
+            {"Unsafe Always Buy": UnsafeAlwaysBuyIndicator()},
+            ticker="TEST",
+            period="1mo",
+        )
+        assert report.total_trades == 0
+        assert report.excluded_indicators == ["Unsafe Always Buy"]
 
 
 class TestComputeMetrics:
@@ -126,6 +201,7 @@ class TestComputeMetrics:
         assert result.prediction_accuracy == 0.5
         assert result.profit_factor > 0
         assert not result.equity_curve.empty
+        assert 0.0 <= result.exposure_pct <= 1.0
 
     def test_equity_curve_length(self):
         trades = [self._make_trade(0.02) for _ in range(3)]

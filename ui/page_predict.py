@@ -9,6 +9,7 @@ from signals.base import SignalDirection
 from signals.combiner import combine_signals
 from ui.components import (
     advanced_settings,
+    analysis_settings_signature,
     check_data_sufficiency,
     horizon_input,
     indicator_picker,
@@ -46,6 +47,12 @@ def render():
         horizon = horizon_input(key="predict_horizon")
         selected_indicators = indicator_picker(key="predict_indicators")
         advanced_settings(key_prefix="predict_adv")
+        analyze_clicked = st.button(
+            "Analyze",
+            type="primary",
+            use_container_width=True,
+            key="predict_analyze",
+        )
 
     if not ticker:
         st.info("Enter a ticker symbol in the sidebar to get started.")
@@ -53,6 +60,19 @@ def render():
 
     if not selected_indicators:
         st.warning("Select at least one indicator.")
+        return
+
+    request_signature = (
+        ticker,
+        period,
+        horizon,
+        tuple(selected_indicators),
+        analysis_settings_signature(),
+    )
+    if analyze_clicked:
+        st.session_state["predict_request_signature"] = request_signature
+    if st.session_state.get("predict_request_signature") != request_signature:
+        st.info("Review the sidebar settings, then click **Analyze**.")
         return
 
     record_recent_ticker(ticker)
@@ -113,12 +133,12 @@ def render():
                     text-align: center;
                     margin-bottom: 12px;
                 ">
-                    <p style="font-size: 0.85em; color: #999; margin: 0;">{label}</p>
+                    <p style="font-size: 0.85em; opacity: 0.7; margin: 0;">{label}</p>
                     <p style="color: {mtf_color}; font-weight: bold; font-size: 1.2em; margin: 4px 0;">
                         {mtf_arrow} {mtf_signal.direction.value}
                     </p>
-                    <p style="font-size: 0.85em; color: #ccc; margin: 0;">
-                        {mtf_signal.confidence:.0%}
+                    <p style="font-size: 0.85em; opacity: 0.85; margin: 0;">
+                        Agreement: {mtf_signal.confidence:.0%}
                     </p>
                 </div>
                 """,
@@ -142,11 +162,11 @@ def render():
             <h1 style="color: {color}; margin: 0;">
                 {arrow} {signal.direction.value}
             </h1>
-            <p style="font-size: 1.3em; color: #ccc; margin: 8px 0 0 0;">
-                Confidence: {signal.confidence:.0%}
+            <p style="font-size: 1.3em; opacity: 0.9; margin: 8px 0 0 0;">
+                Directional Agreement: {signal.confidence:.0%}
             </p>
-            <p style="font-size: 0.9em; color: #999; margin: 4px 0 0 0;">
-                {horizon}-day horizon &bull; {len(selected_indicators)} indicators
+            <p style="font-size: 0.9em; opacity: 0.7; margin: 4px 0 0 0;">
+                {horizon}-bar horizon &bull; {len(selected_indicators)} indicators
             </p>
         </div>
         """,
@@ -156,12 +176,15 @@ def render():
     # Reasoning narrative
     if signal.reasoning:
         st.markdown(f"**Analysis:** {signal.reasoning}")
+    st.caption(
+        "Directional agreement measures the share of actionable weighted votes "
+        "supporting the result; it is not a probability of success."
+    )
 
     # Score breakdown
-    col1, col2, col3 = st.columns(3)
+    col1, col2 = st.columns(2)
     col1.metric("BUY Score", f"{signal.scores.get('BUY', 0):.2f}")
     col2.metric("SELL Score", f"{signal.scores.get('SELL', 0):.2f}")
-    col3.metric("HOLD Score", f"{signal.scores.get('HOLD', 0):.2f}")
 
     # Chart
     overlays = []

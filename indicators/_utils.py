@@ -35,6 +35,14 @@ def fetch_reference_close(ticker: str, period: str = "2y") -> "pd.Series | None"
     return None
 
 
+def reference_period_for_index(index: pd.DatetimeIndex) -> str:
+    """Choose enough reference history to cover a target asset index."""
+    if len(index) < 2:
+        return "2y"
+    span = index[-1] - index[0]
+    return "max" if span > pd.Timedelta(days=700) else "2y"
+
+
 def align_to_index(
     series: "pd.Series | None", target_index: pd.DatetimeIndex
 ) -> pd.Series:

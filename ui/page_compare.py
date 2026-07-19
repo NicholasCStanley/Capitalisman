@@ -1,5 +1,7 @@
 """Compare page: side-by-side analysis of two tickers."""
 
+from html import escape
+
 import numpy as np
 import streamlit as st
 
@@ -8,7 +10,12 @@ from data.fetcher import compute_buy_and_hold, fetch_with_warmup, get_asset_info
 from indicators.registry import get_all_indicators
 from signals.base import SignalDirection
 from signals.combiner import combine_signals
-from ui.components import horizon_input, indicator_picker, period_select
+from ui.components import (
+    analysis_settings_signature,
+    horizon_input,
+    indicator_picker,
+    period_select,
+)
 
 
 def _signal_color(direction: SignalDirection) -> str:
@@ -43,6 +50,12 @@ def render():
         period = period_select(key="compare_period")
         horizon = horizon_input(key="compare_horizon")
         selected_indicators = indicator_picker(key="compare_indicators")
+        compare_clicked = st.button(
+            "Compare",
+            type="primary",
+            use_container_width=True,
+            key="compare_run",
+        )
 
     if not ticker_a or not ticker_b:
         st.info("Enter two ticker symbols in the sidebar to compare.")
@@ -54,6 +67,20 @@ def render():
 
     if not selected_indicators:
         st.warning("Select at least one indicator.")
+        return
+
+    request_signature = (
+        ticker_a,
+        ticker_b,
+        period,
+        horizon,
+        tuple(selected_indicators),
+        analysis_settings_signature(),
+    )
+    if compare_clicked:
+        st.session_state["compare_request_signature"] = request_signature
+    if st.session_state.get("compare_request_signature") != request_signature:
+        st.info("Review the sidebar settings, then click **Compare**.")
         return
 
     # Fetch data for both tickers with warmup
@@ -145,10 +172,10 @@ def render():
                     margin-bottom: 16px;
                 ">
                     <h2 style="color: {color}; margin: 0;">
-                        {arrow} {ticker}: {signal.direction.value}
+                        {arrow} {escape(ticker)}: {signal.direction.value}
                     </h2>
-                    <p style="font-size: 1.1em; color: #ccc; margin: 6px 0 0 0;">
-                        Confidence: {signal.confidence:.0%}
+                    <p style="font-size: 1.1em; opacity: 0.9; margin: 6px 0 0 0;">
+                        Directional Agreement: {signal.confidence:.0%}
                     </p>
                 </div>
                 """,

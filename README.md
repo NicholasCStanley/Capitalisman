@@ -1,24 +1,24 @@
-#                                                                                                                            Capitalisman
+# Capitalisman
 
 <p align="center">
   <img src="Capitalisman.png" alt="Capitalisman" width="400">
 </p>
 
-A personal stock and crypto prediction tool that helps you make more informed trading decisions. It analyzes price data using classical technical indicators **and novel cross-asset, structural, and microstructure signals**, combines them into a single BUY/SELL/HOLD recommendation with a confidence score, and lets you test how well those predictions would have performed on real historical data — all through an easy-to-use web dashboard.
+A personal stock and crypto research tool that analyzes price data using classical technical indicators **and novel cross-asset, structural, and microstructure signals**, combines them into a BUY/SELL/HOLD research signal with a directional-agreement score, and lets you evaluate those signals on historical data through a web dashboard.
 
-No API keys, no account signups, and no trading experience required to get started.
+No trading experience required to get started. The core tool works with no API keys, but optional integrations (FRED economic data, TimesFM ML forecasting) unlock additional indicators.
 
 ## What It Does
 
 ### Predict — Get a Signal for Any Stock or Crypto
 
-Pick a ticker (like `AAPL` for Apple, or `BTC-USD` for Bitcoin) and a time horizon (how many days ahead you want to predict). The tool runs 14 different analyses — spanning classical technical indicators, macroeconomic regime signals, bubble detection, order-flow toxicity, and systemic risk — and combines them into one clear recommendation:
+Pick a ticker (like `AAPL` for Apple, or `BTC-USD` for Bitcoin) and a time horizon (how many days ahead you want to predict). Nine core technical indicators are selected by default, while experimental cross-asset indicators and optional FRED and TimesFM integrations can be enabled as needed.
 
 - **BUY** — indicators suggest the price is likely to go up
 - **SELL** — indicators suggest the price is likely to go down
 - **HOLD** — signals are mixed or too close to call
 
-Each prediction comes with a **confidence score** (0–100%) so you can see how strongly the indicators agree, plus a full breakdown showing what each individual indicator is saying and why.
+Each prediction comes with a **directional-agreement score** (0–100%) showing how much of the actionable weighted vote supports the winning direction. It is not a calibrated probability that the prediction will be correct.
 
 **Multi-Timeframe Signals** — Above the primary signal card, three compact cards show the signal for 1-day, 5-day, and 20-day horizons simultaneously, so you can see whether short-term and long-term outlooks agree at a glance.
 
@@ -28,7 +28,7 @@ Before trusting any strategy, you want to know: "How accurate would this have be
 
 You'll see:
 
-- **Win Rate** — what percentage of predictions were correct
+- **Win Rate** — what percentage of modeled trades were profitable after costs
 - **Total Return** — how much money you would have made or lost
 - **Max Drawdown** — the worst peak-to-valley decline (how much pain you'd have endured)
 - **Sharpe Ratio** — return relative to risk (higher is better; above 1.0 is generally good)
@@ -37,7 +37,7 @@ You'll see:
 - **Trade Log** — every individual trade with entry/exit prices and profit/loss
 - **CSV Export** — download the full trade log as a CSV file for further analysis in Excel or Google Sheets
 
-Backtests include **configurable transaction costs** (slippage and commissions, default 0.1% per trade) so results reflect realistic trading conditions rather than idealized zero-cost scenarios.
+Backtests include **configurable transaction costs** (slippage and commissions, default 0.1% per trade). Signals are evaluated at a bar's close, entered at the next bar's open, and exited at the close after the selected number of bars. Revised FRED series are excluded because the integration does not provide point-in-time vintages. Short positions are modeled without borrow costs.
 
 ### Search — Find Any Ticker
 
@@ -54,11 +54,11 @@ Pick two tickers and compare them head-to-head. The Compare page shows:
 
 ### Screener — Scan Multiple Tickers at Once
 
-Select a preset watchlist (Tech Giants, S&P 500 Top 10, Major Crypto, Indices) or enter your own comma-separated list of tickers. Hit **Scan Watchlist** and the tool runs a full signal analysis on every ticker, then ranks the results by confidence. Each result shows price, daily change, signal direction, confidence, and expandable reasoning. Click **View** to jump to the Predict page for any ticker.
+Select a preset watchlist (Tech Giants, S&P 500 Top 10, Major Crypto, Indices) or enter your own comma-separated list of tickers. Hit **Scan Watchlist** and the tool runs a full signal analysis on every ticker, then ranks the results by directional agreement. Each result shows price, daily change, signal direction, agreement, and expandable reasoning. Click **View** to jump to the Predict page for any ticker.
 
 **Persistent Watchlists** — When using a custom ticker list, you can save it as a named watchlist. Saved watchlists appear in the dropdown with a "(saved)" suffix and persist across sessions (stored in `~/.capitalisman/watchlists.json`). You can delete user-created watchlists at any time; built-in presets cannot be deleted.
 
-**CSV Export** — Download the full screener results (ticker, name, price, change, signal, confidence, scores, reasoning) as a CSV file.
+**CSV Export** — Download the full screener results (ticker, name, price, change, signal, agreement, scores, reasoning) as a CSV file.
 
 ### Explore — Browse Charts and Data
 
@@ -84,17 +84,43 @@ streamlit run app.py
 
 This opens the dashboard in your web browser at `http://localhost:8501`. Use the sidebar on the left to switch between pages and adjust settings.
 
+### Optional: Enable FRED Economic Data
+
+The FRED Macro indicator pulls yield curve, jobless claims, and fed funds rate data from the Federal Reserve. It requires a free API key:
+
+1. Sign up at [fred.stlouisfed.org/docs/api/api_key.html](https://fred.stlouisfed.org/docs/api/api_key.html)
+2. Set the key as an environment variable before running the app:
+
+```bash
+export FRED_API_KEY="your_key_here"
+streamlit run app.py
+```
+
+Without the key, the FRED Macro indicator gracefully returns HOLD with zero confidence — all other indicators work normally.
+
+Install the optional integration first with `pip install -r requirements-optional.txt`.
+
+### Optional: Enable TimesFM ML Forecasting
+
+The TimesFM Forecast indicator uses Google's foundation model for zero-shot time series prediction. It requires PyTorch and the `timesfm` package:
+
+```bash
+pip install timesfm torch
+```
+
+On first run, the model (~800 MB) is downloaded from HuggingFace. Without `timesfm` installed, the indicator gracefully returns HOLD — all other indicators work normally.
+
 ### Quick Start
 
-1. **Try a prediction** — The app starts on the Predict page. Type `AAPL` as the ticker, set the horizon to 5 days, and click through. You'll see a BUY/SELL/HOLD signal with a confidence score and a detailed chart.
+1. **Try a prediction** — The app starts on the Predict page. Type `AAPL`, set the horizon to 5 days, and click **Analyze**. You'll see a BUY/SELL/HOLD signal with directional agreement and a detailed chart.
 
-2. **Run a backtest** — Switch to the Backtest page in the sidebar. Type `AAPL`, pick "1y" (one year) as the period, and keep the 5-day horizon. You'll see how accurate the predictions would have been over the past year.
+2. **Run a backtest** — Switch to Backtest, type `AAPL`, pick "1y", keep the 5-bar horizon, and click **Run Backtest**. Warmup history is fetched separately so the reported evaluation remains bounded to the selected period.
 
 3. **Search for a ticker** — Switch to the Search page. Type "Tesla" and you'll see matching results. Click **Analyze** on `TSLA` to jump to the Predict page with it loaded.
 
 4. **Compare two tickers** — Switch to the Compare page. The defaults are AAPL and MSFT. You'll see a normalized price chart, side-by-side signals, and their correlation.
 
-5. **Screen a watchlist** — Switch to the Screener page. Select "Tech Giants" from the dropdown and click **Scan Watchlist**. You'll get a ranked table of all 7 tickers sorted by signal confidence.
+5. **Screen a watchlist** — Switch to the Screener page. Select "Tech Giants" from the dropdown and click **Scan Watchlist**. You'll get a ranked table of all 7 tickers sorted by directional agreement.
 
 6. **Explore a chart** — Switch to the Explore page. Try `BTC-USD` (Bitcoin) and toggle different indicators on and off to see how they overlay on the price chart.
 
@@ -109,7 +135,7 @@ Anything available on Yahoo Finance:
 
 ## Technical Indicators
 
-The tool uses 14 indicators across 8 categories. The first 9 are classical technical indicators that analyze the ticker's own price and volume data. The remaining 5 are novel signals that draw on cross-asset data, statistical physics, market microstructure, and systemic risk research.
+The tool uses 16 indicators across 9 categories. The first 9 are classical technical indicators that analyze the ticker's own price and volume data. The remaining 7 are novel signals that draw on cross-asset data, FRED economic data, ML-based forecasting, statistical physics, market microstructure, and systemic risk research.
 
 ### Trend Indicators — "Which direction is the price moving?"
 
@@ -148,6 +174,7 @@ These indicators fetch cross-asset data automatically to gauge market-wide condi
 |---|---|
 | **Copper-Gold Ratio** | Divides the copper futures price (industrial demand proxy) by the gold futures price (safe-haven proxy). A rising ratio signals economic expansion (BUY); a falling ratio signals contraction and flight-to-safety (SELL). The ratio is compared against its 50-day and 200-day moving averages to determine trend direction. Research shows this ratio is a leading indicator for 3–12 month equity returns. |
 | **VIX Term Structure** | Compares the near-term VIX (^VIX) to the 3-month VIX (^VIX3M). When near-term VIX exceeds the 3-month VIX (backwardation), markets are in acute stress — historically a precursor to further equity downside (SELL). Normal contango (VIX < VIX3M) signals relative calm (mild BUY). Extreme complacency (very low VIX with deep contango) is flagged as a potential reversal risk. |
+| **FRED Macro** | Combines three leading economic signals from the Federal Reserve Economic Data (FRED) API into a composite macro score. **(1) Yield Curve** (T10Y2Y) — the 10-Year minus 2-Year Treasury spread, the most reliable recession predictor: an inverted (negative) curve has preceded every US recession since the 1960s. **(2) Initial Jobless Claims** (ICSA) — a 4-week vs 13-week moving average crossover detects early labor market deterioration before it shows in payrolls. **(3) Fed Funds Rate** (DFF) — the 3-month rate-of-change indicates monetary policy stance: tightening cycles precede slowdowns (SELL), easing supports risk assets (BUY). Sub-signals are weighted 50/30/20 respectively. Requires a free FRED API key (see Setup below). |
 
 ### Structural Indicators — "Is the price in a bubble?"
 
@@ -161,6 +188,12 @@ These indicators fetch cross-asset data automatically to gauge market-wide condi
 |---|---|
 | **VPIN** (Flow Toxicity) | Volume-Synchronized Probability of Informed Trading — measures order-flow toxicity using Bulk Volume Classification. Each bar's volume is partitioned into buy-initiated and sell-initiated components using the normalized price change within the bar. The rolling absolute imbalance between buy and sell volume is then z-scored against its own recent history. High VPIN (>2σ above mean) signals extreme informed-trading activity and reliably predicts imminent volatility spikes (SELL). Low VPIN signals calm, uninformed flow (mild BUY). Based on Easley, López de Prado & O'Hara (2012). |
 
+### Forecast Indicators — "What does machine learning predict?"
+
+| Indicator | What It Does |
+|---|---|
+| **TimesFM Forecast** | Uses Google's TimesFM foundation model — a large neural network trained on billions of real-world time series — for zero-shot price forecasting. Feeds up to 512 bars of historical Close prices to the model and obtains a 10-day-ahead point forecast. The predicted percentage change is normalised by recent realised volatility to produce a z-score, which is then mapped to a signal-strength level. A predicted gain >0.5% triggers BUY; a predicted loss >0.5% triggers SELL. For backtesting, forecasts are computed every 10 bars and forward-filled in between for efficiency; the indicator participates only when the selected backtest horizon is also 10 bars. Requires `pip install timesfm torch` (see Setup below). |
+
 ### Systemic Risk Indicators — "Is the market structurally fragile?"
 
 | Indicator | What It Does |
@@ -171,11 +204,11 @@ These indicators fetch cross-asset data automatically to gauge market-wide condi
 
 The tool doesn't rely on any single indicator. Instead, it combines all selected indicators using a weighted voting system:
 
-1. **Each indicator votes independently** — it produces a direction (BUY, SELL, or HOLD) and a confidence level (0–100%) based on how far the current reading is from key thresholds.
+1. **Each indicator votes independently** — it produces a direction (BUY, SELL, or HOLD) and a signal-strength value based on how far the current reading is from key thresholds.
 
 2. **Votes are weighted** — some indicators carry more weight than others. For example, MACD (weight 1.2) has slightly more influence than OBV (weight 0.7).
 
-3. **Weights adapt to your time horizon** — if you're predicting 1–3 days ahead, momentum indicators and VPIN get boosted because they're better at short-term signals. For predictions beyond 10 days, trend indicators, macro regime signals, and bubble risk get boosted instead. Each of the 8 indicator categories has its own timescale profile.
+3. **Weights adapt to your time horizon** — if you're predicting 1–3 days ahead, momentum indicators, VPIN, and ML forecasts get boosted because they're better at short-term signals. For predictions beyond 10 days, trend indicators, macro regime signals, and bubble risk get boosted instead. Each of the 9 indicator categories has its own timescale profile.
 
 4. **Only BUY and SELL compete** — indicators that vote HOLD are recorded but don't influence the directional outcome. The direction with the highest weighted score wins.
 
@@ -187,10 +220,12 @@ When running a backtest, you can configure:
 
 - **Ticker** — which stock or crypto to test
 - **Period** — how far back to test (1 month to max available history)
-- **Prediction Horizon** — how many days ahead each prediction targets (1–30 days)
+- **Signal Horizon** — a 1–30 daily-bar horizon used to adjust indicator weights and measure backtest exits; stock bars exclude weekends and market holidays
 - **Indicators** — which indicators to include in the signal
 - **Initial Capital** — starting portfolio value (default $10,000)
 - **Transaction Cost** — round-trip cost per trade as a percentage (default 0.1%), covering slippage and commissions
+
+The displayed period is the evaluation window, not the warmup window. The app fetches earlier observations for rolling indicators, then restricts trades and benchmarks to matching dates.
 
 ## Configuration
 
@@ -240,7 +275,9 @@ Capitalisman/
 │   ├── macro.py                # Copper-Gold Ratio, VIX Term Structure
 │   ├── structural.py           # Bubble Risk (Hurst + log-price acceleration)
 │   ├── microstructure.py       # VPIN (flow toxicity via Bulk Volume Classification)
-│   └── systemic.py             # Market Correlation (absorption ratio via eigenvalue analysis)
+│   ├── systemic.py             # Market Correlation (absorption ratio via eigenvalue analysis)
+│   ├── fred.py                 # FRED Macro (yield curve, jobless claims, fed funds rate)
+│   └── forecast.py             # TimesFM Forecast (zero-shot ML price prediction)
 ├── signals/
 │   ├── base.py                 # Signal data types
 │   └── combiner.py             # Weighted voting combiner
@@ -280,18 +317,21 @@ Installed automatically via `pip install -r requirements.txt`:
 | `plotly` | Interactive charts |
 | `pandas` / `numpy` | Data processing |
 | `scipy` | Scientific computing (used by novel indicators for statistical functions) |
-| `lightweight-charts` | TradingView-style charts (optional — the app automatically falls back to Plotly if not installed) |
-| `pytest` | Unit testing framework (development only) |
+| `fredapi` | Optional FRED economic data access (in `requirements-optional.txt`) |
+| `lightweight-charts` | Optional TradingView-style charts (in `requirements-optional.txt`) |
+| `pytest` | Development testing (in `requirements-dev.txt`) |
+| `timesfm` + `torch` | Google TimesFM ML forecasting (optional — see Setup above) |
 
 ## Running Tests
 
 The project includes a test suite covering indicators, signal combination, backtesting, and data utilities:
 
 ```bash
+pip install -r requirements-dev.txt
 python -m pytest tests/ -v
 ```
 
-Tests use synthetic OHLCV data and run in about 10 seconds. Cross-asset indicators (Copper-Gold Ratio, VIX Term Structure, Market Correlation) will attempt to fetch live reference data during tests; if the network is unavailable, they gracefully fall back to HOLD signals with zero confidence.
+Tests use synthetic OHLCV data and run in about 18 seconds. Cross-asset indicators (Copper-Gold Ratio, VIX Term Structure, Market Correlation) will attempt to fetch live reference data during tests; if the network is unavailable, they gracefully fall back to HOLD signals with zero confidence. The FRED Macro indicator falls back to HOLD if `FRED_API_KEY` is not set, and the TimesFM Forecast indicator falls back to HOLD if `timesfm` is not installed.
 
 ## Adding Your Own Indicators
 

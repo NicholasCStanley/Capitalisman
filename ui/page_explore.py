@@ -28,9 +28,22 @@ def render():
         interval = interval_select(key="explore_interval")
         show_interval_warning(interval)
         selected_indicators = indicator_picker(key="explore_indicators")
+        view_clicked = st.button(
+            "View Chart",
+            type="primary",
+            use_container_width=True,
+            key="explore_view",
+        )
 
     if not ticker:
         st.info("Enter a ticker symbol in the sidebar to get started.")
+        return
+
+    request_signature = (ticker, period, interval, tuple(selected_indicators))
+    if view_clicked:
+        st.session_state["explore_request_signature"] = request_signature
+    if st.session_state.get("explore_request_signature") != request_signature:
+        st.info("Review the sidebar settings, then click **View Chart**.")
         return
 
     record_recent_ticker(ticker)

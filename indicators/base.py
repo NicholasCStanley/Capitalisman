@@ -26,6 +26,15 @@ class BaseIndicator(ABC):
     def lookback(self) -> int:
         """Minimum number of bars needed before the indicator produces valid values."""
 
+    @property
+    def backtest_safe(self) -> bool:
+        """Whether historical values are available without revision look-ahead."""
+        return True
+
+    def supports_backtest_horizon(self, horizon_days: int) -> bool:
+        """Whether this indicator can be evaluated at the requested horizon."""
+        return True
+
     @abstractmethod
     def compute(self, df: pd.DataFrame) -> pd.DataFrame:
         """Compute indicator values and add columns to a copy of df.

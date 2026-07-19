@@ -2,3 +2,4 @@
 
 from indicators import trend, momentum, volatility, volume  # noqa: F401
 from indicators import macro, structural, microstructure, systemic  # noqa: F401
+from indicators import fred, forecast  # noqa: F401

@@ -46,11 +46,11 @@ def compute_metrics(report: BacktestReport) -> BacktestReport:
             max_dd = dd
     report.max_drawdown = max_dd
 
-    # Sharpe ratio (annualized, adjusted for trade frequency and asset type)
+    # Sharpe ratio annualized from the observed trade frequency.
     returns = np.array([t.pnl_pct for t in trades])
     if len(returns) > 1 and np.std(returns) > 0:
-        trading_days_per_year = 365 if report.is_crypto else 252
-        periods_per_year = trading_days_per_year / report.horizon_days
+        elapsed_days = max((trades[-1].exit_date - trades[0].entry_date).days, 1)
+        periods_per_year = len(trades) / (elapsed_days / 365.25)
         report.sharpe_ratio = (np.mean(returns) / np.std(returns)) * np.sqrt(periods_per_year)
     else:
         report.sharpe_ratio = 0.0
@@ -59,5 +59,11 @@ def compute_metrics(report: BacktestReport) -> BacktestReport:
     gross_profit = sum(t.pnl_pct for t in trades if t.pnl_pct > 0)
     gross_loss = abs(sum(t.pnl_pct for t in trades if t.pnl_pct < 0))
     report.profit_factor = gross_profit / gross_loss if gross_loss > 0 else float("inf")
+
+    total_span = (trades[-1].exit_date - trades[0].entry_date).total_seconds()
+    invested_span = sum(
+        (trade.exit_date - trade.entry_date).total_seconds() for trade in trades
+    )
+    report.exposure_pct = min(1.0, invested_span / total_span) if total_span > 0 else 0.0
 
     return report

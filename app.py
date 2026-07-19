@@ -1,9 +1,9 @@
-"""AutoCapital: Price Prediction & Backtesting App."""
+"""Capitalisman: Price Prediction & Backtesting App."""
 
 import streamlit as st
 
 st.set_page_config(
-    page_title="AutoCapital",
+    page_title="Capitalisman",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -16,7 +16,7 @@ from ui import page_predict, page_backtest, page_explore  # noqa: E402
 from ui import page_search, page_compare, page_screener  # noqa: E402
 
 # Sidebar navigation
-st.sidebar.title("AutoCapital")
+st.sidebar.title("Capitalisman")
 page = st.sidebar.radio(
     "Navigation",
     ["Predict", "Backtest", "Explore", "Search", "Compare", "Screener"],

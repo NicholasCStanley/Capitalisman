@@ -14,6 +14,7 @@ def render():
         placeholder="e.g. Apple, Tesla, Bitcoin...",
         key="search_query",
     )
+    search_clicked = st.button("Search", type="primary", key="search_submit")
 
     if not query:
         # Show recent searches if available
@@ -29,6 +30,12 @@ def render():
                 cols[i].button(q, key=f"recent_search_{i}", on_click=_set_query)
         else:
             st.info("Type a company name or symbol above to search.")
+        return
+
+    if search_clicked:
+        st.session_state["submitted_search_query"] = query
+    if st.session_state.get("submitted_search_query") != query:
+        st.info("Click **Search** to find matching tickers.")
         return
 
     # Track recent searches

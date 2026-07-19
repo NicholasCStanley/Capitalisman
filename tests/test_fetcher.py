@@ -7,7 +7,13 @@ because they depend on Streamlit runtime. We test pure utility functions only.
 import pandas as pd
 import pytest
 
-from data.fetcher import compute_buy_and_hold, is_crypto_ticker
+from data.fetcher import (
+    compute_buy_and_hold,
+    compute_open_to_close_return,
+    is_crypto_ticker,
+    slice_date_range,
+    trim_to_period,
+)
 
 
 class TestIsCryptoTicker:
@@ -60,3 +66,28 @@ class TestComputeBuyAndHold:
     def test_empty_dataframe(self):
         df = pd.DataFrame({"Close": []})
         assert compute_buy_and_hold(df) is None
+
+
+class TestOpenToCloseReturn:
+    def test_uses_first_open_and_last_close(self):
+        df = pd.DataFrame({"Open": [90.0, 105.0], "Close": [100.0, 110.0]})
+        assert compute_open_to_close_return(df) == pytest.approx(110.0 / 90.0 - 1.0)
+
+
+class TestPeriodSlicing:
+    def test_trim_to_requested_period(self):
+        index = pd.date_range("2023-01-01", periods=800, freq="D")
+        df = pd.DataFrame({"Close": range(800)}, index=index)
+        result = trim_to_period(df, "1y")
+        assert result.index[0] >= df.index[-1] - pd.Timedelta(days=365)
+        assert len(result) < len(df)
+
+    def test_slice_date_range_ignores_timezone_difference(self):
+        index = pd.date_range("2024-01-01", periods=10, freq="D", tz="UTC")
+        df = pd.DataFrame({"Close": range(10)}, index=index)
+        result = slice_date_range(
+            df,
+            pd.Timestamp("2024-01-03", tz="America/New_York"),
+            pd.Timestamp("2024-01-05", tz="America/New_York"),
+        )
+        assert list(result.index.day) == [3, 4, 5]

@@ -51,6 +51,10 @@ INDICATOR_WEIGHTS = {
     "Bubble Risk": 1.1,
     "VPIN": 0.9,
     "Market Correlation": 0.8,
+    # FRED macro data
+    "FRED Macro": 1.1,
+    # ML forecast
+    "TimesFM Forecast": 1.2,
 }
 
 # Timescale weight adjustments
@@ -65,6 +69,7 @@ TIMESCALE_ADJUSTMENTS = {
         "structural": 0.6,   # bubble risk is medium/long-term
         "microstructure": 1.5,  # VPIN is most useful for short-term prediction
         "systemic": 0.6,     # systemic risk is a slow-burning signal
+        "forecast": 1.2,     # ML forecasts tend to be more accurate short-term
     },
     "medium": {  # 4-10 days
         "trend": 1.0,
@@ -75,6 +80,7 @@ TIMESCALE_ADJUSTMENTS = {
         "structural": 1.0,
         "microstructure": 1.0,
         "systemic": 1.0,
+        "forecast": 1.0,
     },
     "long": {  # > 10 days
         "trend": 1.4,
@@ -85,6 +91,7 @@ TIMESCALE_ADJUSTMENTS = {
         "structural": 1.4,   # bubble detection matters most over weeks/months
         "microstructure": 0.5,  # flow toxicity fades quickly
         "systemic": 1.3,     # systemic fragility compounds over time
+        "forecast": 0.8,     # forecast accuracy degrades over longer horizons
     },
 }
 
@@ -104,6 +111,8 @@ INDICATOR_CATEGORIES = {
     "Bubble Risk": "structural",
     "VPIN": "microstructure",
     "Market Correlation": "systemic",
+    "FRED Macro": "macro",
+    "TimesFM Forecast": "forecast",
 }
 
 # Signal combination
@@ -153,12 +162,16 @@ WARMUP_FETCH_PERIOD = {
 # The backtest engine requires max_lookback + WARMUP_BUFFER + horizon bars,
 # so we need more history than the charting warmup provides.
 BACKTEST_FETCH_PERIOD = {
-    "1d": "1y",
-    "5d": "1y",
-    "1wk": "1y",
-    "2wk": "1y",
-    "1mo": "1y",
-    "3mo": "1y",
+    "1d": "2y",
+    "5d": "2y",
+    "1wk": "2y",
+    "2wk": "2y",
+    "1mo": "2y",
+    "3mo": "2y",
+    "6mo": "2y",
+    "1y": "2y",
+    "2y": "5y",
+    "5y": "max",
 }
 
 # Calendar days to keep when trimming warmup data back to display range.
@@ -170,7 +183,23 @@ PERIOD_CALENDAR_DAYS = {
     "2wk": 14,
     "1mo": 31,
     "3mo": 93,
+    "6mo": 183,
+    "1y": 365,
+    "2y": 730,
+    "5y": 1826,
 }
+
+DEFAULT_INDICATORS = [
+    "SMA Crossover",
+    "EMA Crossover",
+    "MACD",
+    "ADX",
+    "RSI",
+    "Stochastic",
+    "Bollinger Bands",
+    "VWAP",
+    "OBV",
+]
 
 # Yahoo Finance intraday data limits (max history available per interval)
 INTRADAY_MAX_PERIODS = {

@@ -6,10 +6,16 @@ import streamlit as st
 from backtesting.engine import run_backtest
 from charts.factory import render_equity_curve, render_price_chart
 from config.settings import BACKTEST_FETCH_PERIOD
-from data.fetcher import compute_buy_and_hold, fetch_ohlcv
+from data.fetcher import (
+    compute_open_to_close_return,
+    fetch_ohlcv,
+    slice_date_range,
+    trim_to_period,
+)
 from indicators.registry import get_all_indicators
 from ui.components import (
     advanced_settings,
+    analysis_settings_signature,
     capital_input,
     check_data_sufficiency,
     cost_input,
@@ -37,6 +43,12 @@ def render():
         initial_capital = capital_input(key="backtest_capital")
         cost_pct = cost_input(key="backtest_cost")
         advanced_settings(key_prefix="backtest_adv")
+        run_clicked = st.button(
+            "Run Backtest",
+            type="primary",
+            use_container_width=True,
+            key="backtest_run",
+        )
 
     if not ticker:
         st.info("Enter a ticker symbol in the sidebar to get started.")
@@ -44,6 +56,21 @@ def render():
 
     if not selected_indicators:
         st.warning("Select at least one indicator.")
+        return
+
+    request_signature = (
+        ticker,
+        period,
+        horizon,
+        tuple(selected_indicators),
+        initial_capital,
+        cost_pct,
+        analysis_settings_signature(),
+    )
+    if run_clicked:
+        st.session_state["backtest_request_signature"] = request_signature
+    if st.session_state.get("backtest_request_signature") != request_signature:
+        st.info("Review the sidebar settings, then click **Run Backtest**.")
         return
 
     record_recent_ticker(ticker)
@@ -67,12 +94,14 @@ def render():
         st.warning(
             f"Insufficient data for {len(data_warnings)} indicator(s) "
             f"({len(df)} bars available):\n\n" + "\n".join(f"- {w}" for w in data_warnings)
-            + "\n\nThese will be excluded from signal generation. Use a longer period."
+            + "\n\nThese will report HOLD until enough warmup data is available."
         )
 
     # Build selected indicators
     all_indicators = get_all_indicators()
     chosen = {n: all_indicators[n] for n in selected_indicators if n in all_indicators}
+    evaluation_df = trim_to_period(df, period)
+    evaluation_start = evaluation_df.index[0] if not evaluation_df.empty else None
 
     # Run backtest
     try:
@@ -81,23 +110,45 @@ def render():
                 df, chosen, ticker=ticker, period=period,
                 horizon_days=horizon, initial_capital=initial_capital,
                 cost_per_trade_pct=cost_pct,
+                evaluation_start=evaluation_start,
             )
     except Exception as e:
         st.error(f"Error running backtest: {e}")
         return
 
+    if report.excluded_indicators:
+        st.warning(
+            "Excluded because the indicator is not historically compatible with this setup "
+            "(point-in-time data or horizon constraint): "
+            + ", ".join(report.excluded_indicators)
+            + ". These indicators remain available for current predictions."
+        )
+
     if report.total_trades == 0:
-        st.warning("No trades generated. Try a longer period or different indicators.")
+        st.warning(
+            "No trades generated in the requested evaluation window. "
+            "Try a longer period or indicators with shorter lookbacks."
+        )
         return
 
+    first_entry = report.trades[0].entry_date
+    last_exit = report.trades[-1].exit_date
+    st.caption(
+        f"Evaluation: {first_entry:%Y-%m-%d} to {last_exit:%Y-%m-%d}. "
+        f"Signals use closing data and enter at the next bar's open; exits use the close "
+        f"after {horizon} bars. Short positions are modeled without borrow costs."
+    )
+
     # Compute benchmark/buy-and-hold returns for context
-    ticker_bh = compute_buy_and_hold(df)
+    ticker_eval = slice_date_range(df, first_entry, last_exit)
+    ticker_bh = compute_open_to_close_return(ticker_eval)
 
     benchmark_bh = None
     if ticker.upper() != _DEFAULT_BENCHMARK:
         try:
-            bench_df = fetch_ohlcv(_DEFAULT_BENCHMARK, period=period)
-            benchmark_bh = compute_buy_and_hold(bench_df)
+            bench_df = fetch_ohlcv(_DEFAULT_BENCHMARK, period=fetch_period)
+            bench_eval = slice_date_range(bench_df, first_entry, last_exit)
+            benchmark_bh = compute_open_to_close_return(bench_eval)
         except Exception:
             pass  # benchmark fetch failed — not critical
 
@@ -115,6 +166,11 @@ def render():
     pf_display = "No losses" if report.profit_factor == float("inf") else f"{report.profit_factor:.2f}"
     m6.metric("Sharpe Ratio", f"{report.sharpe_ratio:.2f}")
     m7.metric("Profit Factor", pf_display)
+    m8.metric(
+        "Time in Market",
+        f"{report.exposure_pct:.1%}",
+        help="Share of the evaluated calendar span with an open modeled position",
+    )
 
     # Benchmark context
     if ticker_bh is not None or benchmark_bh is not None:
@@ -172,8 +228,9 @@ def render():
             "size": 8,
         })
 
+    computed_display = computed_df.loc[computed_df.index >= evaluation_start]
     render_price_chart(
-        computed_df,
+        computed_display,
         title=f"{ticker} — Backtest Results",
         markers=markers,
         height=500,

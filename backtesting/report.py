@@ -30,6 +30,9 @@ class BacktestReport:
     initial_capital: float
     trades: list[Trade] = field(default_factory=list)
     is_crypto: bool = False
+    evaluation_start: pd.Timestamp | None = None
+    evaluation_end: pd.Timestamp | None = None
+    excluded_indicators: list[str] = field(default_factory=list)
 
     # Computed metrics
     total_trades: int = 0
@@ -42,6 +45,7 @@ class BacktestReport:
     max_drawdown: float = 0.0
     sharpe_ratio: float = 0.0
     profit_factor: float = 0.0
+    exposure_pct: float = 0.0
     benchmark_return: float | None = None  # buy-and-hold return over same period
 
     # Equity curve

@@ -12,7 +12,11 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from indicators._utils import align_to_index, fetch_reference_close
+from indicators._utils import (
+    align_to_index,
+    fetch_reference_close,
+    reference_period_for_index,
+)
 from indicators.base import BaseIndicator
 from indicators.registry import register
 from signals.base import SignalDirection, SignalResult
@@ -50,8 +54,9 @@ class CopperGoldRatio(BaseIndicator):
     def compute(self, df: pd.DataFrame) -> pd.DataFrame:
         df = df.copy()
 
-        copper = fetch_reference_close("HG=F")
-        gold = fetch_reference_close("GC=F")
+        reference_period = reference_period_for_index(df.index)
+        copper = fetch_reference_close("HG=F", period=reference_period)
+        gold = fetch_reference_close("GC=F", period=reference_period)
 
         copper_aligned = align_to_index(copper, df.index)
         gold_aligned = align_to_index(gold, df.index)
@@ -149,8 +154,9 @@ class VIXTermStructure(BaseIndicator):
     def compute(self, df: pd.DataFrame) -> pd.DataFrame:
         df = df.copy()
 
-        vix = fetch_reference_close("^VIX")
-        vix3m = fetch_reference_close("^VIX3M")
+        reference_period = reference_period_for_index(df.index)
+        vix = fetch_reference_close("^VIX", period=reference_period)
+        vix3m = fetch_reference_close("^VIX3M", period=reference_period)
 
         vix_aligned = align_to_index(vix, df.index)
         vix3m_aligned = align_to_index(vix3m, df.index)

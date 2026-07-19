@@ -1,10 +1,14 @@
 """Shared UI widgets for sidebar controls."""
 
+import importlib.util
+import os
+
 import streamlit as st
 
 from config.settings import (
     DEFAULT_BACKTEST_PERIOD,
     DEFAULT_COST_PER_TRADE_PCT,
+    DEFAULT_INDICATORS,
     DEFAULT_INITIAL_CAPITAL,
     DEFAULT_PERIOD,
     DEFAULT_PREDICTION_HORIZON,
@@ -49,11 +53,12 @@ def interval_select(key: str = "interval") -> str:
 def horizon_input(key: str = "horizon") -> int:
     """Render prediction horizon slider."""
     return st.slider(
-        "Prediction Horizon (days)",
+        "Signal Horizon (daily bars)",
         min_value=1,
         max_value=30,
         value=DEFAULT_PREDICTION_HORIZON,
         key=key,
+        help="Adjusts indicator weights by horizon. In backtests, stocks skip non-trading days.",
     )
 
 
@@ -61,12 +66,22 @@ def indicator_picker(key: str = "indicators") -> list[str]:
     """Render indicator multi-select and return chosen names."""
     all_indicators = get_all_indicators()
     names = sorted(all_indicators.keys())
-    return st.multiselect(
+    defaults = [name for name in DEFAULT_INDICATORS if name in all_indicators]
+    selected = st.multiselect(
         "Indicators",
         options=names,
-        default=names,
+        default=defaults,
         key=key,
+        help="Core technical indicators are selected by default. Add experimental or optional signals as needed.",
     )
+    optional_status = []
+    if "FRED Macro" in selected and not os.environ.get("FRED_API_KEY"):
+        optional_status.append("FRED Macro needs FRED_API_KEY")
+    if "TimesFM Forecast" in selected and importlib.util.find_spec("timesfm") is None:
+        optional_status.append("TimesFM Forecast needs timesfm + torch")
+    if optional_status:
+        st.caption("Unavailable: " + "; ".join(optional_status))
+    return selected
 
 
 def check_data_sufficiency(
@@ -89,6 +104,15 @@ def check_data_sufficiency(
                 f"**{name}** needs {indicator.lookback} bars, got {df_len}"
             )
     return warnings
+
+
+def analysis_settings_signature() -> tuple:
+    """Return a stable signature for settings that affect signal output."""
+    weights = tuple(sorted(get_setting("INDICATOR_WEIGHTS").items()))
+    thresholds = tuple(
+        (name, get_setting(name)) for name in sorted(TUNABLE_THRESHOLDS)
+    )
+    return weights, thresholds
 
 
 def capital_input(key: str = "capital") -> float:
@@ -201,4 +225,11 @@ def advanced_settings(key_prefix: str = "adv") -> None:
 
         if st.button("Reset to Defaults", key=f"{key_prefix}_reset"):
             clear_overrides()
+            widget_prefixes = (
+                f"{key_prefix}_weight_",
+                f"{key_prefix}_thresh_",
+            )
+            for state_key in list(st.session_state):
+                if state_key.startswith(widget_prefixes):
+                    del st.session_state[state_key]
             st.rerun()
