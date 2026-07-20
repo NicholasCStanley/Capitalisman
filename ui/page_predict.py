@@ -1,5 +1,7 @@
 """Predict page: signal generation and display."""
 
+from html import escape
+
 import pandas as pd
 import streamlit as st
 
@@ -37,6 +39,75 @@ def _signal_emoji(direction: SignalDirection) -> str:
     return "●"
 
 
+def _render_timesfm_panel(ticker, horizon, analysis, model_signal, error):
+    """Render a distinct model-only result or an explicit failure state."""
+    st.subheader("TimesFM Model Forecast")
+    st.caption(
+        "Standalone local-ML result. This is separate from the combined indicator "
+        "signal shown below."
+    )
+
+    if analysis is None:
+        st.error(
+            "TimesFM was selected but did not produce a forecast. "
+            f"{error or 'Review the runtime status in the sidebar and try again.'}"
+        )
+        return
+
+    direction = model_signal.direction if model_signal else SignalDirection.HOLD
+    color = _signal_color(direction)
+    arrow = _signal_emoji(direction)
+    safe_ticker = escape(str(ticker))
+    safe_origin = escape(str(analysis.origin))
+    st.markdown(
+        f"""
+        <div style="
+            background: linear-gradient(135deg, #6f42c122, #00bcd411);
+            border: 2px solid #9c6ade;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 16px;
+        ">
+            <p style="font-size: 0.8em; letter-spacing: 0.12em; opacity: 0.75; margin: 0;">
+                TIMESFM 2.5 &bull; {analysis.forecast.device.upper()} &bull; MODEL-ONLY
+            </p>
+            <h2 style="color: {color}; margin: 6px 0;">
+                {arrow} {direction.value} FORECAST
+            </h2>
+            <p style="margin: 0; opacity: 0.85;">
+                {safe_ticker} &bull; {horizon}-bar horizon &bull; origin {safe_origin}
+            </p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    tfm_cols = st.columns(4)
+    tfm_cols[0].metric("Median Return", f"{analysis.expected_return:+.1%}")
+    tfm_cols[1].metric("Probability Up", f"{analysis.probability_up:.0%}")
+    tfm_cols[2].metric(
+        "Probability Above Costs", f"{analysis.probability_profit:.0%}"
+    )
+    tfm_cols[3].metric("10th Percentile", f"{analysis.downside_return:+.1%}")
+
+    forecast_frame = pd.DataFrame(
+        {
+            "10th percentile": analysis.forecast.quantiles[0.1],
+            "Median": analysis.forecast.quantiles[0.5],
+            "90th percentile": analysis.forecast.quantiles[0.9],
+        },
+        index=pd.Index(range(1, analysis.horizon + 1), name="Future bar"),
+    )
+    st.line_chart(forecast_frame)
+    if model_signal:
+        st.markdown(f"**Model interpretation:** {model_signal.detail}")
+    st.caption(
+        f"Model: {analysis.forecast.model_id} · Device: "
+        f"{analysis.forecast.device.upper()} · q10–q90 is an estimated 80% interval, "
+        "not a guarantee."
+    )
+
+
 def render():
     st.header("Predict")
 
@@ -48,8 +119,9 @@ def render():
         horizon = horizon_input(key="predict_horizon")
         selected_indicators = indicator_picker(key="predict_indicators")
         advanced_settings(key_prefix="predict_adv")
+        timesfm_selected = "TimesFM Forecast" in selected_indicators
         analyze_clicked = st.button(
-            "Analyze",
+            "Run TimesFM Forecast" if timesfm_selected else "Analyze",
             type="primary",
             use_container_width=True,
             key="predict_analyze",
@@ -112,12 +184,36 @@ def render():
         signal = combine_signals(chosen, computed_df, horizon_days=horizon, precomputed=True)
         timesfm_indicator = chosen.get("TimesFM Forecast")
         timesfm_analysis = getattr(timesfm_indicator, "latest_analysis", None)
+        timesfm_error = getattr(timesfm_indicator, "last_error", None)
+        timesfm_signal = next(
+            (
+                item
+                for item in signal.individual_signals
+                if item.indicator_name == "TimesFM Forecast"
+            ),
+            None,
+        )
 
         # Trim computed data to display range for charting
         computed_display = computed_df.iloc[-len(display_df):]
     except Exception as e:
         st.error(f"Error computing signals: {e}")
         return
+
+    if timesfm_selected:
+        _render_timesfm_panel(
+            ticker,
+            horizon,
+            timesfm_analysis,
+            timesfm_signal,
+            timesfm_error,
+        )
+        st.divider()
+        st.subheader("Combined Indicator Context")
+        st.caption(
+            f"Ensemble result from {len(selected_indicators)} selected indicators, "
+            "including TimesFM."
+        )
 
     # Multi-timeframe signal cards (1d, 5d, 20d)
     _MTF_HORIZONS = [("1d", 1), ("5d", 5), ("20d", 20)]
@@ -188,41 +284,6 @@ def render():
     col1, col2 = st.columns(2)
     col1.metric("BUY Score", f"{signal.scores.get('BUY', 0):.2f}")
     col2.metric("SELL Score", f"{signal.scores.get('SELL', 0):.2f}")
-
-    if timesfm_analysis is not None:
-        with st.expander("TimesFM Probabilistic Forecast", expanded=True):
-            tfm_cols = st.columns(4)
-            tfm_cols[0].metric(
-                "Median Return", f"{timesfm_analysis.expected_return:+.1%}"
-            )
-            tfm_cols[1].metric(
-                "Probability Up", f"{timesfm_analysis.probability_up:.0%}"
-            )
-            tfm_cols[2].metric(
-                "Probability Above Costs",
-                f"{timesfm_analysis.probability_profit:.0%}",
-            )
-            tfm_cols[3].metric(
-                "10th Percentile", f"{timesfm_analysis.downside_return:+.1%}"
-            )
-
-            forecast_frame = pd.DataFrame(
-                {
-                    "10th percentile": timesfm_analysis.forecast.quantiles[0.1],
-                    "Median": timesfm_analysis.forecast.quantiles[0.5],
-                    "90th percentile": timesfm_analysis.forecast.quantiles[0.9],
-                },
-                index=pd.Index(
-                    range(1, timesfm_analysis.horizon + 1), name="Future bar"
-                ),
-            )
-            st.line_chart(forecast_frame)
-            st.caption(
-                f"Origin: {timesfm_analysis.origin} · "
-                f"Horizon: {timesfm_analysis.horizon} bars · "
-                f"Model: {timesfm_analysis.forecast.model_id} · "
-                f"Device: {timesfm_analysis.forecast.device.upper()}"
-            )
 
     # Chart
     overlays = []

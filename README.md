@@ -144,6 +144,19 @@ until it demonstrates consistent out-of-sample improvement across assets, market
 regimes, and horizons. Planned calibration, baseline, regime, and ensemble work
 is tracked in [`ROADMAP.md`](ROADMAP.md).
 
+To see an unambiguous TimesFM result in the app:
+
+1. Activate `capitalisman-timesfm` and launch Streamlit from that environment.
+2. Open **Predict** and add **TimesFM Forecast** to the Indicators selection.
+3. Confirm the sidebar says **TimesFM mode selected** and identifies CUDA or CPU.
+4. Choose a ticker and horizon, then click **Run TimesFM Forecast**.
+5. Read the dedicated **TimesFM Model Forecast** panel at the top of the results.
+   Its direction, probabilities, interval, model, and device are model-only. The
+   separately labeled **Combined Indicator Context** below is the ensemble result.
+
+If the model cannot run, the dedicated panel remains visible and reports the
+failure instead of disappearing or presenting the ensemble HOLD as a model result.
+
 ### Quick Start
 
 1. **Try a prediction** — The app starts on the Predict page. Type `AAPL`, set the horizon to 5 days, and click **Analyze**. You'll see a BUY/SELL/HOLD signal with directional agreement and a detailed chart.

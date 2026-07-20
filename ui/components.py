@@ -86,9 +86,11 @@ def indicator_picker(key: str = "indicators") -> list[str]:
             if runtime_status.state not in {"ready", "loaded"}:
                 optional_status.append(f"TimesFM: {runtime_status.message}")
             else:
-                st.caption(
-                    f"TimesFM ready on {runtime_status.resolved_device.upper()} "
-                    f"(torch {runtime_status.torch_version})"
+                st.info(
+                    f"**TimesFM mode selected** — the local model will run on "
+                    f"{runtime_status.resolved_device.upper()} when you analyze. "
+                    f"Its standalone forecast will appear above the combined "
+                    f"indicator signal."
                 )
     if optional_status:
         st.caption("Unavailable: " + "; ".join(optional_status))
