@@ -2,7 +2,7 @@
 
 from html import escape
 
-import pandas as pd
+import plotly.graph_objects as go
 import streamlit as st
 
 from charts.factory import render_price_chart
@@ -82,23 +82,81 @@ def _render_timesfm_panel(ticker, horizon, analysis, model_signal, error):
         unsafe_allow_html=True,
     )
 
-    tfm_cols = st.columns(4)
-    tfm_cols[0].metric("Median Return", f"{analysis.expected_return:+.1%}")
-    tfm_cols[1].metric("Probability Up", f"{analysis.probability_up:.0%}")
-    tfm_cols[2].metric(
+    upper_return = analysis.upper_price / analysis.current_price - 1.0
+    return_paths = {
+        "q10": analysis.forecast.quantiles[0.1] / analysis.current_price - 1.0,
+        "median": analysis.forecast.quantiles[0.5] / analysis.current_price - 1.0,
+        "q90": analysis.forecast.quantiles[0.9] / analysis.current_price - 1.0,
+    }
+
+    return_cols = st.columns(4)
+    return_cols[0].metric("Median Return", f"{analysis.expected_return:+.1%}")
+    return_cols[1].metric("q10 Downside", f"{analysis.downside_return:+.1%}")
+    return_cols[2].metric("q90 Upside", f"{upper_return:+.1%}")
+    return_cols[3].metric("q10–q90 Width", f"{analysis.interval_width:.1%}")
+
+    probability_cols = st.columns(2)
+    probability_cols[0].metric("Probability Up", f"{analysis.probability_up:.0%}")
+    probability_cols[1].metric(
         "Probability Above Costs", f"{analysis.probability_profit:.0%}"
     )
-    tfm_cols[3].metric("10th Percentile", f"{analysis.downside_return:+.1%}")
 
-    forecast_frame = pd.DataFrame(
-        {
-            "10th percentile": analysis.forecast.quantiles[0.1],
-            "Median": analysis.forecast.quantiles[0.5],
-            "90th percentile": analysis.forecast.quantiles[0.9],
-        },
-        index=pd.Index(range(1, analysis.horizon + 1), name="Future bar"),
+    future_bars = list(range(1, analysis.horizon + 1))
+    forecast_chart = go.Figure()
+    forecast_chart.add_trace(
+        go.Scatter(
+            x=future_bars,
+            y=return_paths["q10"],
+            mode="lines",
+            name="q10 downside",
+            line=dict(color="#38BDF8", width=1.5),
+            hovertemplate="Future bar %{x}<br>q10: %{y:.2%}<extra></extra>",
+        )
     )
-    st.line_chart(forecast_frame)
+    forecast_chart.add_trace(
+        go.Scatter(
+            x=future_bars,
+            y=return_paths["q90"],
+            mode="lines",
+            name="q90 upside",
+            line=dict(color="#A78BFA", width=1.5),
+            fill="tonexty",
+            fillcolor="rgba(139, 92, 246, 0.18)",
+            hovertemplate="Future bar %{x}<br>q90: %{y:.2%}<extra></extra>",
+        )
+    )
+    forecast_chart.add_trace(
+        go.Scatter(
+            x=future_bars,
+            y=return_paths["median"],
+            mode="lines+markers",
+            name="Median forecast",
+            line=dict(color="#F59E0B", width=3),
+            marker=dict(size=5),
+            hovertemplate="Future bar %{x}<br>Median: %{y:.2%}<extra></extra>",
+        )
+    )
+    forecast_chart.add_hline(
+        y=0,
+        line_dash="dot",
+        line_color="rgba(148, 163, 184, 0.7)",
+        annotation_text="Current price",
+    )
+    forecast_chart.update_layout(
+        title="Forecast Return Path and 80% Quantile Band",
+        xaxis_title="Future bar",
+        yaxis_title="Return from current price",
+        yaxis_tickformat="+.1%",
+        hovermode="x unified",
+        height=390,
+        margin=dict(l=20, r=20, t=55, b=20),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0),
+    )
+    st.plotly_chart(forecast_chart, use_container_width=True)
+    st.caption(
+        "The purple area is the model's q10–q90 interval. A wider band means "
+        "greater forecast uncertainty; the orange line is the median path."
+    )
     if model_signal:
         st.markdown(f"**Model interpretation:** {model_signal.detail}")
     st.caption(
