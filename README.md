@@ -107,13 +107,42 @@ Install the optional integration first with `pip install -r requirements-optiona
 
 ### Optional: Enable TimesFM ML Forecasting
 
-The TimesFM Forecast indicator uses Google's foundation model for zero-shot time series prediction. It requires PyTorch and the `timesfm` package:
+The TimesFM Forecast indicator uses Google's TimesFM 2.5 model for zero-shot,
+probabilistic time-series prediction. Keep its PyTorch/CUDA dependencies isolated
+from your base Python installation:
 
 ```bash
-pip install timesfm torch
+conda env create -f environment-timesfm.yml
+conda run -n capitalisman-timesfm python -m pip install \
+  torch --index-url https://download.pytorch.org/whl/cu128
+conda run -n capitalisman-timesfm python -m pip install -r requirements-timesfm.txt
 ```
 
-On first run, the model (~800 MB) is downloaded from HuggingFace. Without `timesfm` installed, the indicator gracefully returns HOLD — all other indicators work normally.
+Use the appropriate PyTorch CUDA wheel for your GPU and driver. On first use,
+model weights are downloaded from Hugging Face and cached locally. Without a
+compatible runtime, the indicator returns HOLD and displays the precise preflight
+error; all other indicators continue to work. See [`docs/TIMESFM.md`](docs/TIMESFM.md)
+for health checks, configuration, interpretation, and point-in-time benchmarking.
+
+#### Current TimesFM Status
+
+- Uses the official TimesFM 2.5 PyTorch API with lazy model loading.
+- Detects CUDA availability, package compatibility, memory, and disk space before
+  attempting inference.
+- Produces horizon-aware point and quantile forecasts rather than a single fixed
+  10-day estimate.
+- Displays median return, q10/q90 range, probability of an upward move, and
+  probability of clearing configured transaction costs.
+- Includes a rolling point-in-time benchmark against a naïve last-price forecast,
+  with directional, calibration, Brier, MAE, and pinball metrics.
+- Has been smoke-tested with CUDA 12.8 on an NVIDIA RTX 5090 from the isolated
+  `capitalisman-timesfm` environment.
+
+TimesFM remains an experimental research input. A successful forecast does not
+establish predictive edge, and the model should not receive greater signal weight
+until it demonstrates consistent out-of-sample improvement across assets, market
+regimes, and horizons. Planned calibration, baseline, regime, and ensemble work
+is tracked in [`ROADMAP.md`](ROADMAP.md).
 
 ### Quick Start
 
@@ -197,7 +226,7 @@ These indicators fetch cross-asset data automatically to gauge market-wide condi
 
 | Indicator | What It Does |
 |---|---|
-| **TimesFM Forecast** | Uses Google's TimesFM foundation model — a large neural network trained on billions of real-world time series — for zero-shot price forecasting. Feeds up to 512 bars of historical Close prices to the model and obtains a 10-day-ahead point forecast. The predicted percentage change is normalised by recent realised volatility to produce a z-score, which is then mapped to a signal-strength level. A predicted gain >0.5% triggers BUY; a predicted loss >0.5% triggers SELL. For backtesting, forecasts are computed every 10 bars and forward-filled in between for efficiency; the indicator participates only when the selected backtest horizon is also 10 bars. Requires `pip install timesfm torch` (see Setup below). |
+| **TimesFM Forecast** | Uses TimesFM 2.5 to forecast the selected horizon from up to 1,024 historical Close prices. It exposes a median path, q10 downside, q90 upside, interval width, probability of a positive return, and probability of clearing transaction costs. BUY/SELL requires at least 60% estimated directional probability. Forecasts are computed only at valid point-in-time origins and are never forward-filled as fresh observations. See [`docs/TIMESFM.md`](docs/TIMESFM.md). |
 
 ### Systemic Risk Indicators — "Is the market structurally fragile?"
 
@@ -264,6 +293,10 @@ Capitalisman/
 ├── app.py                      # App entry point
 ├── Capitalisman.png            # Project logo and README artwork
 ├── ROADMAP.md                  # Reserved plans for future development
+├── environment-timesfm.yml     # Isolated TimesFM Conda environment
+├── requirements-timesfm.txt    # TimesFM environment packages
+├── docs/
+│   └── TIMESFM.md              # Runtime, CUDA, interpretation, and benchmarks
 ├── requirements.txt            # Core Python dependencies
 ├── requirements-optional.txt   # Optional integrations and charting dependencies
 ├── requirements-dev.txt        # Development and test dependencies
@@ -287,6 +320,12 @@ Capitalisman/
 │   ├── systemic.py             # Market Correlation (absorption ratio via eigenvalue analysis)
 │   ├── fred.py                 # FRED Macro (yield curve, jobless claims, fed funds rate)
 │   └── forecast.py             # TimesFM Forecast (zero-shot ML price prediction)
+├── ml/
+│   ├── timesfm_runtime.py      # Lazy model loading and CUDA preflight
+│   └── benchmark.py            # Point-in-time probabilistic evaluation
+├── scripts/
+│   ├── timesfm_check.py        # Runtime health and inference smoke test
+│   └── benchmark_timesfm.py    # Rolling ticker benchmark CLI
 ├── signals/
 │   ├── base.py                 # Signal data types
 │   └── combiner.py             # Weighted voting combiner
@@ -329,7 +368,7 @@ Installed automatically via `pip install -r requirements.txt`:
 | `fredapi` | Optional FRED economic data access (in `requirements-optional.txt`) |
 | `lightweight-charts` | Optional TradingView-style charts (in `requirements-optional.txt`) |
 | `pytest` | Development testing (in `requirements-dev.txt`) |
-| `timesfm` + `torch` | Google TimesFM ML forecasting (optional — see Setup above) |
+| `timesfm` + `torch` | Google TimesFM 2.5 forecasting (isolated optional environment) |
 
 ## Running Tests
 
@@ -340,7 +379,13 @@ pip install -r requirements-dev.txt
 python -m pytest tests/ -v
 ```
 
-Tests use synthetic OHLCV data and run in about 18 seconds. Cross-asset indicators (Copper-Gold Ratio, VIX Term Structure, Market Correlation) will attempt to fetch live reference data during tests; if the network is unavailable, they gracefully fall back to HOLD signals with zero confidence. The FRED Macro indicator falls back to HOLD if `FRED_API_KEY` is not set, and the TimesFM Forecast indicator falls back to HOLD if `timesfm` is not installed.
+The suite currently contains 196 tests and uses synthetic OHLCV data for core
+behavior. Cross-asset indicators (Copper-Gold Ratio, VIX Term Structure, Market
+Correlation) may attempt to fetch live reference data; without network access,
+they gracefully fall back to HOLD with zero confidence. FRED Macro behaves the
+same way when `FRED_API_KEY` is unavailable. TimesFM unit tests use an injected
+model and never download weights; real CUDA inference is an explicit smoke test
+documented in [`docs/TIMESFM.md`](docs/TIMESFM.md).
 
 ## Adding Your Own Indicators
 

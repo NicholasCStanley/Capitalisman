@@ -201,7 +201,7 @@ def render():
     # Price chart with prediction markers
     computed_df = df.copy()
     for name, indicator in chosen.items():
-        computed_df = indicator.compute(computed_df)
+        computed_df = indicator.compute_for_horizon(computed_df, horizon)
 
     correct_trades = [t for t in report.trades if t.correct]
     incorrect_trades = [t for t in report.trades if not t.correct]

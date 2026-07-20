@@ -6,5 +6,5 @@ lightweight-charts>=2.0
 # FRED economic data (also requires a free FRED_API_KEY)
 fredapi>=0.5.0
 
-# TimesFM is intentionally not pinned here because its supported package and
-# torch versions depend on the host platform. Install with: pip install timesfm torch
+# TimesFM and its accelerator stack use a separate Conda environment. See
+# environment-timesfm.yml, requirements-timesfm.txt, and docs/TIMESFM.md.

@@ -35,6 +35,18 @@ class BaseIndicator(ABC):
         """Whether this indicator can be evaluated at the requested horizon."""
         return True
 
+    def compute_for_horizon(
+        self, df: pd.DataFrame, horizon_days: int
+    ) -> pd.DataFrame:
+        """Compute values for a requested horizon when an indicator needs it."""
+        return self.compute(df)
+
+    def get_signal_for_horizon(
+        self, df: pd.DataFrame, horizon_days: int, idx: int = -1
+    ) -> SignalResult:
+        """Generate a horizon-aware signal when supported by an indicator."""
+        return self.get_signal(df, idx=idx)
+
     @abstractmethod
     def compute(self, df: pd.DataFrame) -> pd.DataFrame:
         """Compute indicator values and add columns to a copy of df.

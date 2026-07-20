@@ -1,113 +1,53 @@
-"""TimesFM price forecast indicator.
+"""Probabilistic TimesFM 2.5 price forecast indicator."""
 
-Uses Google's TimesFM foundation model for zero-shot time series forecasting.
-Provides an ML-based directional signal that is orthogonal to the rules-based
-technical indicators in the rest of the system.
-
-TimesFM is trained on billions of real-world time series and can capture
-nonlinear patterns, regime changes, and seasonality that traditional
-indicators miss.
-
-Requires:  pip install timesfm torch
-Optional — falls back to HOLD with zero confidence if not installed.
-On first run the model (~800 MB) is downloaded from HuggingFace.
-"""
-
+from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
 import pandas as pd
 
+from config.settings import DEFAULT_COST_PER_TRADE_PCT
 from indicators.base import BaseIndicator
 from indicators.registry import register
+from ml.timesfm_runtime import (
+    TimesFMForecast as RuntimeForecast,
+    TimesFMRuntime,
+    get_timesfm_runtime,
+    probability_above,
+)
 from signals.base import SignalDirection, SignalResult
 
-# ---------------------------------------------------------------------------
-# Model singleton — loaded once per process, reused across all calls.
-# ---------------------------------------------------------------------------
 
-_model = None
-_model_load_attempted = False
-
-FORECAST_HORIZON = 10  # days ahead
-CONTEXT_LEN = 512      # max bars of history fed to the model
-FORECAST_STEP = 10     # compute a new forecast every N bars (for backtesting)
+DEFAULT_FORECAST_HORIZON = 10
+MIN_CONTEXT = 30
+MIN_DIRECTIONAL_PROBABILITY = 0.60
 
 
-def _get_model():
-    """Lazy-load the TimesFM model with caching."""
-    global _model, _model_load_attempted
-    if _model_load_attempted:
-        return _model
-    _model_load_attempted = True
+@dataclass(frozen=True)
+class TimesFMAnalysis:
+    origin: pd.Timestamp | object
+    horizon: int
+    current_price: float
+    median_price: float
+    lower_price: float
+    upper_price: float
+    expected_return: float
+    downside_return: float
+    interval_width: float
+    probability_up: float
+    probability_profit: float
+    probability_down: float
+    forecast: RuntimeForecast
 
-    try:
-        import timesfm  # noqa: F811
-
-        # TimesFM 2.0 API (dataclass-based config)
-        try:
-            _model = timesfm.TimesFm(
-                hparams=timesfm.TimesFmHparams(
-                    backend="cpu",
-                    per_core_batch_size=32,
-                    horizon_len=FORECAST_HORIZON,
-                    context_len=CONTEXT_LEN,
-                ),
-                checkpoint=timesfm.TimesFmCheckpoint(
-                    huggingface_repo_id="google/timesfm-2.0-200m-pytorch",
-                ),
-            )
-            return _model
-        except (AttributeError, TypeError):
-            pass
-
-        # TimesFM 1.0 API (positional args)
-        try:
-            _model = timesfm.TimesFm(
-                context_len=CONTEXT_LEN,
-                horizon_len=FORECAST_HORIZON,
-                input_patch_len=32,
-                output_patch_len=128,
-                num_layers=20,
-                model_dims=1280,
-                backend="cpu",
-            )
-            _model.load_from_checkpoint(repo_id="google/timesfm-1.0-200m-pytorch")
-            return _model
-        except Exception:
-            pass
-
-    except ImportError:
-        pass
-    except Exception:
-        pass
-
-    _model = None
-    return None
-
-
-# ---------------------------------------------------------------------------
-# TimesFM Forecast Indicator
-# ---------------------------------------------------------------------------
 
 @register
 class TimesFMForecast(BaseIndicator):
-    """Zero-shot price forecast via Google's TimesFM foundation model.
+    """TimesFM 2.5 probabilistic forecast exposed as a research signal."""
 
-    Feeds up to 512 bars of historical Close prices to TimesFM and obtains
-    a point forecast for the next 10 trading days.  The predicted price
-    change relative to the current price determines the signal direction,
-    and the magnitude normalised by recent volatility sets the confidence.
-
-    For backtesting efficiency, forecasts are computed every 10 bars and
-    forward-filled in between (a forecast doesn't change intra-horizon).
-    Batch inference is used when possible for speed.
-
-    Requires ``pip install timesfm torch``.
-    Falls back to HOLD with zero confidence if not installed.
-    """
-
-    MIN_CONTEXT = 30  # minimum bars for a meaningful forecast
+    def __init__(self, runtime: TimesFMRuntime | None = None) -> None:
+        self.runtime = runtime or get_timesfm_runtime()
+        self.latest_analysis: TimesFMAnalysis | None = None
+        self.last_error: str | None = None
 
     @property
     def name(self) -> str:
@@ -119,158 +59,182 @@ class TimesFMForecast(BaseIndicator):
 
     @property
     def lookback(self) -> int:
-        return max(self.MIN_CONTEXT, 60)
-
-    def supports_backtest_horizon(self, horizon_days: int) -> bool:
-        return horizon_days == FORECAST_HORIZON
-
-    # ------------------------------------------------------------------
-    # Compute
-    # ------------------------------------------------------------------
+        return MIN_CONTEXT
 
     def compute(self, df: pd.DataFrame) -> pd.DataFrame:
-        df = df.copy()
-        n = len(df)
+        return self.compute_for_horizon(df, DEFAULT_FORECAST_HORIZON)
 
-        df["TFM_forecast"] = np.nan
-        df["TFM_change_pct"] = np.nan
+    def compute_for_horizon(
+        self, df: pd.DataFrame, horizon_days: int
+    ) -> pd.DataFrame:
+        result = df.copy()
+        self._initialize_columns(result)
+        self.latest_analysis = None
+        self.last_error = None
 
-        model = _get_model()
-        if model is None or n < self.MIN_CONTEXT:
-            return df
+        if len(result) < MIN_CONTEXT:
+            self.last_error = f"TimesFM needs at least {MIN_CONTEXT} bars"
+            return result
 
-        prices = df["Close"].values
+        origins = list(range(MIN_CONTEXT - 1, len(result), max(1, horizon_days)))
+        if origins[-1] != len(result) - 1:
+            origins.append(len(result) - 1)
+        contexts = [
+            result["Close"].iloc[: origin + 1].to_numpy(dtype=np.float32)
+            for origin in origins
+        ]
 
-        # Determine which bars to forecast at
-        step = max(FORECAST_STEP, 1)
-        forecast_indices = list(range(self.MIN_CONTEXT, n, step))
-        # Always include the last bar
-        if not forecast_indices or forecast_indices[-1] != n - 1:
-            forecast_indices.append(n - 1)
-
-        # Build contexts for batch inference
-        contexts = []
-        valid_indices = []
-        for i in forecast_indices:
-            ctx = prices[max(0, i - CONTEXT_LEN + 1) : i + 1].astype(np.float32)
-            if len(ctx) >= self.MIN_CONTEXT:
-                contexts.append(ctx)
-                valid_indices.append(i)
-
-        if not contexts:
-            return df
-
-        # Run inference (batch first, individual fallback)
-        point_forecasts = self._batch_forecast(model, contexts)
-        if point_forecasts is None:
-            point_forecasts = self._individual_forecast(model, contexts)
-
-        if point_forecasts is None:
-            return df
-
-        # Write results into the DataFrame
-        fc_col = df.columns.get_loc("TFM_forecast")
-        cp_col = df.columns.get_loc("TFM_change_pct")
-
-        for j, i in enumerate(valid_indices):
-            if point_forecasts[j] is None:
-                continue
-            forecast_price = float(point_forecasts[j])
-            current_price = float(prices[i])
-            if current_price > 0:
-                change_pct = (forecast_price - current_price) / current_price
-            else:
-                change_pct = 0.0
-            df.iat[i, fc_col] = forecast_price
-            df.iat[i, cp_col] = change_pct
-
-        df["TFM_forecast"] = df["TFM_forecast"].ffill()
-        df["TFM_change_pct"] = df["TFM_forecast"] / df["Close"] - 1.0
-
-        return df
-
-    @staticmethod
-    def _batch_forecast(model, contexts: list[np.ndarray]) -> "list | None":
-        """Try batch inference — returns list of endpoint prices or None."""
         try:
-            point_forecasts, _ = model.forecast(contexts, freq=[0] * len(contexts))
-            return [float(pf[-1]) for pf in point_forecasts]
-        except Exception:
-            return None
+            forecasts = self.runtime.forecast(contexts, horizon=horizon_days)
+        except (RuntimeError, ValueError) as error:
+            self.last_error = str(error)
+            return result
 
-    @staticmethod
-    def _individual_forecast(model, contexts: list[np.ndarray]) -> "list | None":
-        """Fallback: run one forecast at a time."""
-        results = []
-        any_success = False
-        for ctx in contexts:
-            try:
-                pf, _ = model.forecast([ctx], freq=[0])
-                results.append(float(pf[0][-1]))
-                any_success = True
-            except Exception:
-                results.append(None)
-        return results if any_success else None
+        for origin, forecast in zip(origins, forecasts):
+            analysis = self._analyze_forecast(
+                forecast,
+                current_price=float(result["Close"].iloc[origin]),
+                origin=result.index[origin],
+            )
+            self._write_analysis(result, origin, analysis)
+            if origin == len(result) - 1:
+                self.latest_analysis = analysis
 
-    # ------------------------------------------------------------------
-    # Signal
-    # ------------------------------------------------------------------
+        return result
 
     def get_signal(self, df: pd.DataFrame, idx: int = -1) -> SignalResult:
-        if "TFM_forecast" not in df.columns:
-            df = self.compute(df)
-
-        forecast = df["TFM_forecast"].iloc[idx]
-        change_pct = df["TFM_change_pct"].iloc[idx]
-
-        if pd.isna(forecast) or pd.isna(change_pct):
-            return SignalResult(
-                self.name, SignalDirection.HOLD, 0.0,
-                "TimesFM unavailable (pip install timesfm torch)",
-            )
-
-        current = df["Close"].iloc[idx]
-
-        # Normalise predicted change by recent realised volatility
-        actual_idx = idx if idx >= 0 else len(df) + idx
-        returns = df["Close"].iloc[: actual_idx + 1].pct_change().dropna()
-        if len(returns) > 20:
-            daily_vol = returns.iloc[-60:].std()
-        else:
-            daily_vol = 0.02  # conservative fallback
-
-        horizon_vol = daily_vol * np.sqrt(FORECAST_HORIZON) if daily_vol > 0 else 0.02
-        z_score = change_pct / horizon_vol if horizon_vol > 0 else 0.0
-
-        # Sigmoid-like mapping of |z| to confidence (saturates at ~0.9)
-        confidence = min(0.9, abs(z_score) / (1.0 + abs(z_score)))
-
-        if change_pct > 0.005:  # > +0.5% predicted
-            return SignalResult(
-                self.name, SignalDirection.BUY, confidence,
-                f"TimesFM predicts +{change_pct:.1%} over {FORECAST_HORIZON}d "
-                f"(${current:.2f} -> ${forecast:.2f})",
-            )
-        if change_pct < -0.005:  # > -0.5% predicted
-            return SignalResult(
-                self.name, SignalDirection.SELL, confidence,
-                f"TimesFM predicts {change_pct:.1%} over {FORECAST_HORIZON}d "
-                f"(${current:.2f} -> ${forecast:.2f})",
-            )
-
-        return SignalResult(
-            self.name, SignalDirection.HOLD, 0.1,
-            f"TimesFM predicts flat ({change_pct:+.1%}) over {FORECAST_HORIZON}d",
+        return self.get_signal_for_horizon(
+            df, horizon_days=DEFAULT_FORECAST_HORIZON, idx=idx
         )
 
-    # ------------------------------------------------------------------
-    # Chart
-    # ------------------------------------------------------------------
+    def get_signal_for_horizon(
+        self, df: pd.DataFrame, horizon_days: int, idx: int = -1
+    ) -> SignalResult:
+        if not self._has_forecast(df, horizon_days, idx):
+            computed = self.compute_for_horizon(df, horizon_days)
+        else:
+            computed = df
+
+        probability_up = computed["TFM_probability_up"].iloc[idx]
+        probability_profit = computed["TFM_probability_profit"].iloc[idx]
+        expected_return = computed["TFM_expected_return"].iloc[idx]
+        downside_return = computed["TFM_downside_return"].iloc[idx]
+
+        if pd.isna(probability_up) or pd.isna(expected_return):
+            detail = self.last_error or "No TimesFM forecast at this evaluation origin"
+            return SignalResult(self.name, SignalDirection.HOLD, 0.0, detail)
+
+        probability_down = 1.0 - float(probability_up)
+        strength = min(0.9, abs(float(probability_up) - 0.5) * 2)
+        cost = DEFAULT_COST_PER_TRADE_PCT / 100.0
+
+        if probability_profit >= MIN_DIRECTIONAL_PROBABILITY and expected_return > cost:
+            return SignalResult(
+                self.name,
+                SignalDirection.BUY,
+                strength,
+                f"TimesFM median {expected_return:+.1%} over {horizon_days} bars; "
+                f"P(return > costs) {probability_profit:.0%}; q10 {downside_return:+.1%}",
+            )
+        if probability_down >= MIN_DIRECTIONAL_PROBABILITY and expected_return < -cost:
+            return SignalResult(
+                self.name,
+                SignalDirection.SELL,
+                strength,
+                f"TimesFM median {expected_return:+.1%} over {horizon_days} bars; "
+                f"P(down) {probability_down:.0%}; q10 {downside_return:+.1%}",
+            )
+        return SignalResult(
+            self.name,
+            SignalDirection.HOLD,
+            strength,
+            f"TimesFM uncertain: median {expected_return:+.1%}, "
+            f"P(up) {probability_up:.0%} over {horizon_days} bars",
+        )
 
     def get_chart_config(self) -> dict[str, Any]:
         return {
             "overlay": False,
-            "columns": ["TFM_change_pct"],
-            "colors": {"TFM_change_pct": "#9C27B0"},
-            "subplot_title": "TimesFM Forecast (%)",
+            "columns": [
+                "TFM_expected_return",
+                "TFM_downside_return",
+                "TFM_upper_return",
+            ],
+            "colors": {
+                "TFM_expected_return": "#9C27B0",
+                "TFM_downside_return": "#F44336",
+                "TFM_upper_return": "#4CAF50",
+            },
+            "subplot_title": "TimesFM Forecast Return Distribution",
         }
+
+    @staticmethod
+    def _initialize_columns(df: pd.DataFrame) -> None:
+        for column in (
+            "TFM_point",
+            "TFM_q10",
+            "TFM_q50",
+            "TFM_q90",
+            "TFM_expected_return",
+            "TFM_downside_return",
+            "TFM_upper_return",
+            "TFM_interval_width",
+            "TFM_probability_up",
+            "TFM_probability_profit",
+            "TFM_horizon",
+        ):
+            df[column] = np.nan
+
+    @staticmethod
+    def _has_forecast(df: pd.DataFrame, horizon: int, idx: int) -> bool:
+        return (
+            "TFM_horizon" in df.columns
+            and not pd.isna(df["TFM_horizon"].iloc[idx])
+            and int(df["TFM_horizon"].iloc[idx]) == horizon
+        )
+
+    @staticmethod
+    def _analyze_forecast(
+        forecast: RuntimeForecast,
+        current_price: float,
+        origin: pd.Timestamp | object,
+    ) -> TimesFMAnalysis:
+        median = forecast.terminal_quantile(0.5)
+        lower = forecast.terminal_quantile(0.1)
+        upper = forecast.terminal_quantile(0.9)
+        cost = DEFAULT_COST_PER_TRADE_PCT / 100.0
+        return TimesFMAnalysis(
+            origin=origin,
+            horizon=forecast.horizon,
+            current_price=current_price,
+            median_price=median,
+            lower_price=lower,
+            upper_price=upper,
+            expected_return=median / current_price - 1.0,
+            downside_return=lower / current_price - 1.0,
+            interval_width=(upper - lower) / current_price,
+            probability_up=probability_above(forecast, current_price),
+            probability_profit=probability_above(forecast, current_price * (1.0 + cost)),
+            probability_down=1.0 - probability_above(forecast, current_price),
+            forecast=forecast,
+        )
+
+    @staticmethod
+    def _write_analysis(
+        df: pd.DataFrame, origin: int, analysis: TimesFMAnalysis
+    ) -> None:
+        values = {
+            "TFM_point": analysis.forecast.terminal_point,
+            "TFM_q10": analysis.lower_price,
+            "TFM_q50": analysis.median_price,
+            "TFM_q90": analysis.upper_price,
+            "TFM_expected_return": analysis.expected_return,
+            "TFM_downside_return": analysis.downside_return,
+            "TFM_upper_return": analysis.upper_price / analysis.current_price - 1.0,
+            "TFM_interval_width": analysis.interval_width,
+            "TFM_probability_up": analysis.probability_up,
+            "TFM_probability_profit": analysis.probability_profit,
+            "TFM_horizon": analysis.horizon,
+        }
+        for column, value in values.items():
+            df.iat[origin, df.columns.get_loc(column)] = value

@@ -21,6 +21,7 @@ from config.settings import (
 )
 from config.overrides import clear_overrides, get_setting, set_override
 from indicators.registry import get_all_indicators
+from ml.timesfm_runtime import get_timesfm_runtime
 
 
 def ticker_input(key: str = "ticker") -> str:
@@ -77,8 +78,18 @@ def indicator_picker(key: str = "indicators") -> list[str]:
     optional_status = []
     if "FRED Macro" in selected and not os.environ.get("FRED_API_KEY"):
         optional_status.append("FRED Macro needs FRED_API_KEY")
-    if "TimesFM Forecast" in selected and importlib.util.find_spec("timesfm") is None:
-        optional_status.append("TimesFM Forecast needs timesfm + torch")
+    if "TimesFM Forecast" in selected:
+        if importlib.util.find_spec("timesfm") is None:
+            optional_status.append("TimesFM Forecast needs TimesFM 2.5 + PyTorch")
+        else:
+            runtime_status = get_timesfm_runtime().status
+            if runtime_status.state not in {"ready", "loaded"}:
+                optional_status.append(f"TimesFM: {runtime_status.message}")
+            else:
+                st.caption(
+                    f"TimesFM ready on {runtime_status.resolved_device.upper()} "
+                    f"(torch {runtime_status.torch_version})"
+                )
     if optional_status:
         st.caption("Unavailable: " + "; ".join(optional_status))
     return selected

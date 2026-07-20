@@ -1,5 +1,6 @@
 """Predict page: signal generation and display."""
 
+import pandas as pd
 import streamlit as st
 
 from charts.factory import render_price_chart
@@ -105,10 +106,12 @@ def render():
         # Compute indicators on full data (includes warmup)
         computed_df = full_df.copy()
         for name, indicator in chosen.items():
-            computed_df = indicator.compute(computed_df)
+            computed_df = indicator.compute_for_horizon(computed_df, horizon)
 
         # Generate combined signal from full data
         signal = combine_signals(chosen, computed_df, horizon_days=horizon, precomputed=True)
+        timesfm_indicator = chosen.get("TimesFM Forecast")
+        timesfm_analysis = getattr(timesfm_indicator, "latest_analysis", None)
 
         # Trim computed data to display range for charting
         computed_display = computed_df.iloc[-len(display_df):]
@@ -185,6 +188,41 @@ def render():
     col1, col2 = st.columns(2)
     col1.metric("BUY Score", f"{signal.scores.get('BUY', 0):.2f}")
     col2.metric("SELL Score", f"{signal.scores.get('SELL', 0):.2f}")
+
+    if timesfm_analysis is not None:
+        with st.expander("TimesFM Probabilistic Forecast", expanded=True):
+            tfm_cols = st.columns(4)
+            tfm_cols[0].metric(
+                "Median Return", f"{timesfm_analysis.expected_return:+.1%}"
+            )
+            tfm_cols[1].metric(
+                "Probability Up", f"{timesfm_analysis.probability_up:.0%}"
+            )
+            tfm_cols[2].metric(
+                "Probability Above Costs",
+                f"{timesfm_analysis.probability_profit:.0%}",
+            )
+            tfm_cols[3].metric(
+                "10th Percentile", f"{timesfm_analysis.downside_return:+.1%}"
+            )
+
+            forecast_frame = pd.DataFrame(
+                {
+                    "10th percentile": timesfm_analysis.forecast.quantiles[0.1],
+                    "Median": timesfm_analysis.forecast.quantiles[0.5],
+                    "90th percentile": timesfm_analysis.forecast.quantiles[0.9],
+                },
+                index=pd.Index(
+                    range(1, timesfm_analysis.horizon + 1), name="Future bar"
+                ),
+            )
+            st.line_chart(forecast_frame)
+            st.caption(
+                f"Origin: {timesfm_analysis.origin} · "
+                f"Horizon: {timesfm_analysis.horizon} bars · "
+                f"Model: {timesfm_analysis.forecast.model_id} · "
+                f"Device: {timesfm_analysis.forecast.device.upper()}"
+            )
 
     # Chart
     overlays = []

@@ -144,12 +144,12 @@ def render():
         # Compute indicators and signals on full (warmup) data
         computed_a = full_a.copy()
         for indicator in chosen.values():
-            computed_a = indicator.compute(computed_a)
+            computed_a = indicator.compute_for_horizon(computed_a, horizon)
         signal_a = combine_signals(chosen, computed_a, horizon_days=horizon, precomputed=True)
 
         computed_b = full_b.copy()
         for indicator in chosen.values():
-            computed_b = indicator.compute(computed_b)
+            computed_b = indicator.compute_for_horizon(computed_b, horizon)
         signal_b = combine_signals(chosen, computed_b, horizon_days=horizon, precomputed=True)
     except Exception as e:
         st.error(f"Error computing signals: {e}")

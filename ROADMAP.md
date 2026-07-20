@@ -17,6 +17,82 @@ workflow that explains:
 
 ## Near-Term Priorities
 
+### TimesFM Foundation — Completed
+
+- [x] Isolate PyTorch, CUDA, and TimesFM dependencies in a dedicated Conda
+      environment that ignores user-site packages.
+- [x] Replace the legacy TimesFM wrapper with the official TimesFM 2.5 PyTorch
+      runtime, lazy model loading, hardware preflight, and actionable failures.
+- [x] Make forecasts honor the user-selected horizon throughout prediction,
+      comparison, screening, and backtesting.
+- [x] Expose point, q10, q50, and q90 paths plus cost-aware directional
+      probabilities in the Predict interface.
+- [x] Add leakage-resistant rolling evaluation with naïve-baseline MAE,
+      directional accuracy, interval coverage, Brier score, and pinball loss.
+- [x] Validate the test suite and real inference on an NVIDIA CUDA device.
+
+### TimesFM Forecast Development
+
+#### Phase 1 — Establish Measurable Value
+
+- [ ] Add drift, moving-average, exponential-smoothing, and simple autoregressive
+      baselines alongside the existing last-price baseline.
+- [ ] Run reproducible multi-asset benchmark suites across equities, indices,
+      rates, commodities, and crypto.
+- [ ] Evaluate multiple forecast horizons and minimum-context lengths without
+      selecting settings on the final test period.
+- [ ] Store benchmark inputs, model/package versions, configuration, metrics, and
+      per-origin results as versioned research artifacts.
+- [ ] Add a benchmark results page that clearly shows whether TimesFM beats each
+      baseline and where it fails.
+- [ ] Define minimum acceptance criteria before increasing TimesFM's voting weight
+      or presenting it as more than experimental.
+
+#### Phase 2 — Calibration and Regime Awareness
+
+- [ ] Add chronological train/calibration/test partitions and nested rolling
+      evaluation for any learned thresholds.
+- [ ] Measure reliability curves for `P(up)` and empirical coverage for every
+      forecast interval.
+- [ ] Calibrate probabilities and quantiles on held-out data using isotonic,
+      conformal, or other appropriate post-processing methods.
+- [ ] Break down accuracy and calibration by volatility, trend, liquidity, asset
+      class, and macro regime.
+- [ ] Detect distribution shift and warn when the current context is unlike the
+      model's validated operating conditions.
+- [ ] Make signal confidence depend on calibrated historical reliability rather
+      than raw model probability alone.
+
+#### Phase 3 — Stronger Local ML
+
+- [ ] Compare raw price, log-price, return, volatility-scaled return, and
+      detrended input representations using identical evaluation windows.
+- [ ] Add covariate experiments for volume, realized volatility, market returns,
+      rates, and regime features without introducing future leakage.
+- [ ] Build a local PyTorch ensemble that learns when to use TimesFM versus
+      statistical and technical baselines.
+- [ ] Investigate parameter-efficient fine-tuning only after the zero-shot
+      benchmark and data-splitting framework are stable.
+- [ ] Add mixed-precision inference, safe batch sizing, model caching, and runtime
+      telemetry for supported NVIDIA hardware.
+- [ ] Track model lineage, data lineage, random seeds, and reproducibility metadata
+      for every trained or calibrated artifact.
+
+#### Phase 4 — Forecast User Experience
+
+- [ ] Visualize historical forecast cones against realized prices so users can
+      see calibration rather than only the latest path.
+- [ ] Explain in plain language when TimesFM agrees with, contradicts, or adds no
+      value beyond simpler indicators.
+- [ ] Show baseline comparisons, sample size, regime, data freshness, and model
+      status beside every forecast.
+- [ ] Let users select Auto, CUDA, or CPU and inspect model/cache information from
+      the interface.
+- [ ] Provide cancellable progress, estimated workload, and bounded benchmark
+      presets for expensive local analysis.
+- [ ] Export a self-contained forecast research report with assumptions,
+      uncertainty, metrics, and configuration.
+
 ### Signal Interpretation
 
 - [ ] Add a signed contribution chart for every indicator.
@@ -96,16 +172,16 @@ workflow that explains:
 
 ## Suggested Delivery Order
 
-1. Signal contribution visualization and strategy presets.
-2. Saved and versioned strategy configurations.
-3. Out-of-sample and rolling walk-forward testing.
-4. Historical calibration and expected-return distributions.
-5. Regime breakdowns and parameter-sensitivity analysis.
-6. Portfolio backtesting and alerts.
+1. Expand TimesFM baselines and multi-asset benchmark coverage.
+2. Add benchmark persistence and an interpretable results view.
+3. Add chronological calibration and regime breakdowns.
+4. Add signal contribution visualization and strategy presets.
+5. Add saved and versioned strategy configurations.
+6. Evaluate local ensembles and parameter-efficient fine-tuning.
+7. Add portfolio backtesting, research reports, and alerts.
 
 ## Guiding Principle
 
 Capitalisman should not merely provide a signal. It should show when similar
 signals worked, how robust the evidence is, what could invalidate the result,
 and how much uncertainty remains.
-

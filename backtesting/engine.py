@@ -64,7 +64,7 @@ def run_backtest(
     # or on the full series.
     computed_df = df.copy()
     for name, indicator in safe_indicators.items():
-        computed_df = indicator.compute(computed_df)
+        computed_df = indicator.compute_for_horizon(computed_df, horizon_days)
 
     # Determine warmup: max lookback + buffer
     max_lookback = max(ind.lookback for ind in safe_indicators.values())

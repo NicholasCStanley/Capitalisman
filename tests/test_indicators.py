@@ -351,23 +351,45 @@ class TestFREDMacroRegime:
 
 
 class TestTimesFMForecast:
-    def test_backtest_horizon_must_match_forecast(self):
+    @staticmethod
+    def _indicator():
         from indicators.forecast import TimesFMForecast
+        from ml.timesfm_runtime import TimesFMRuntime
 
-        indicator = TimesFMForecast()
+        class FakeModel:
+            def forecast(self, horizon, inputs):
+                point = []
+                quantiles = []
+                for values in inputs:
+                    current = float(values[-1])
+                    path = current * (1.0 + np.linspace(0.002, 0.02, horizon))
+                    point.append(path)
+                    slices = np.zeros((horizon, 10))
+                    slices[:, 0] = path
+                    for quantile_idx in range(1, 10):
+                        slices[:, quantile_idx] = path * (
+                            0.94 + quantile_idx * 0.012
+                        )
+                    quantiles.append(slices)
+                return np.asarray(point), np.asarray(quantiles)
+
+        return TimesFMForecast(TimesFMRuntime(model_factory=FakeModel))
+
+    def test_supports_configurable_backtest_horizons(self):
+        indicator = self._indicator()
         assert indicator.supports_backtest_horizon(10)
-        assert not indicator.supports_backtest_horizon(5)
+        assert indicator.supports_backtest_horizon(5)
 
     def test_compute_adds_columns(self, ohlcv_200_up):
-        from indicators.forecast import TimesFMForecast
-        tfm = TimesFMForecast()
+        tfm = self._indicator()
         result = tfm.compute(ohlcv_200_up)
-        assert "TFM_forecast" in result.columns
-        assert "TFM_change_pct" in result.columns
+        assert "TFM_point" in result.columns
+        assert "TFM_q10" in result.columns
+        assert "TFM_q90" in result.columns
+        assert "TFM_probability_up" in result.columns
 
     def test_signal_returns_valid_result(self, ohlcv_200_up):
-        from indicators.forecast import TimesFMForecast
-        tfm = TimesFMForecast()
+        tfm = self._indicator()
         result = tfm.compute(ohlcv_200_up)
         signal = tfm.get_signal(result)
         assert isinstance(signal, SignalResult)
@@ -387,19 +409,17 @@ class TestTimesFMForecast:
         )
 
     def test_historical_signal_ignores_future_volatility(self, ohlcv_200_up):
-        from indicators.forecast import TimesFMForecast
-
         idx = 100
-        baseline = ohlcv_200_up.copy()
-        baseline["TFM_forecast"] = baseline["Close"] * 1.05
-        baseline["TFM_change_pct"] = 0.05
-        changed_future = baseline.copy()
+        changed_future = ohlcv_200_up.copy()
         changed_future.iloc[idx + 1 :, changed_future.columns.get_loc("Close")] *= np.linspace(
             0.2, 5.0, len(changed_future) - idx - 1
         )
 
-        indicator = TimesFMForecast()
-        first = indicator.get_signal(baseline, idx=idx)
-        second = indicator.get_signal(changed_future, idx=idx)
+        first_indicator = self._indicator()
+        second_indicator = self._indicator()
+        first_df = first_indicator.compute_for_horizon(ohlcv_200_up, 10)
+        second_df = second_indicator.compute_for_horizon(changed_future, 10)
+        first = first_indicator.get_signal_for_horizon(first_df, 10, idx=idx)
+        second = second_indicator.get_signal_for_horizon(second_df, 10, idx=idx)
         assert first.direction == second.direction
         assert first.confidence == pytest.approx(second.confidence)

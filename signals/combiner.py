@@ -102,8 +102,10 @@ def combine_signals(
 
     for name, indicator in indicators.items():
         if not precomputed:
-            working_df = indicator.compute(working_df)
-        signal = indicator.get_signal(working_df, idx=idx)
+            working_df = indicator.compute_for_horizon(working_df, horizon_days)
+        signal = indicator.get_signal_for_horizon(
+            working_df, horizon_days=horizon_days, idx=idx
+        )
         individual_signals.append(signal)
 
         weight = _get_adjusted_weight(name, horizon_days)

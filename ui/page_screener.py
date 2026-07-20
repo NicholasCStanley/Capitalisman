@@ -106,7 +106,7 @@ def render():
                 df = fetch_ohlcv(ticker, period="6mo")
                 computed = df.copy()
                 for indicator in chosen.values():
-                    computed = indicator.compute(computed)
+                    computed = indicator.compute_for_horizon(computed, horizon)
                 signal = combine_signals(chosen, computed, horizon_days=horizon, precomputed=True)
 
                 info = get_asset_info(ticker)
