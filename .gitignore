@@ -29,3 +29,6 @@ Thumbs.db
 # Environment variables
 .env
 .env.local
+
+# Local research data and generated archives
+research_runs/

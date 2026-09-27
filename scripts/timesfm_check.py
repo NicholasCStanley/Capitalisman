@@ -1,7 +1,7 @@
 """Inspect the TimesFM runtime and optionally perform a model smoke test."""
 
 import argparse
-from dataclasses import asdict
+from dataclasses import asdict, replace
 import json
 
 import numpy as np
@@ -22,6 +22,7 @@ def main() -> int:
     parser.add_argument("--profile", choices=PROFILE_PREFERENCES, default="auto")
     parser.add_argument("--use-case", choices=USE_CASES, default="interactive")
     parser.add_argument("--smoke", action="store_true", help="Load weights and forecast")
+    parser.add_argument("--no-torch-compile", action="store_true", help="Disable optional Torch compilation")
     parser.add_argument(
         "--autotune",
         action="store_true",
@@ -36,7 +37,8 @@ def main() -> int:
         print(json.dumps({"error": "CUDA requested but no CUDA device was detected"}, indent=2))
         return 1
     profile = select_runtime_profile(hardware, args.use_case, args.profile)
-    runtime = TimesFMRuntime(TimesFMRuntimeConfig.from_profile(profile))
+    runtime = TimesFMRuntime(replace(TimesFMRuntimeConfig.from_profile(profile),
+                                    device=args.device, torch_compile=not args.no_torch_compile))
     status = runtime.preflight()
     print(
         json.dumps(
@@ -57,6 +59,7 @@ def main() -> int:
         print(
             json.dumps(
                 {
+                    "status": asdict(runtime.status),
                     "point": forecast.point.tolist(),
                     "q10": forecast.quantiles[0.1].tolist(),
                     "q50": forecast.quantiles[0.5].tolist(),

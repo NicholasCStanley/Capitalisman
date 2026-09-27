@@ -66,6 +66,11 @@ def _strategy_controls():
         key="sim_custom_ambiguity",
         help="Return HOLD when bullish and bearish weighted scores are this close.",
     )
+    evidence = st.slider(
+        "Minimum evidence strength", 0.0, 1.0, 0.15, 0.01,
+        key="sim_custom_evidence",
+        help="Actionable weighted confidence divided by all selected indicator weight.",
+    )
     weights = {}
     with st.expander("Custom indicator weights"):
         for indicator in selected:
@@ -83,6 +88,7 @@ def _strategy_controls():
         selected,
         horizon_days=horizon,
         ambiguity_threshold=ambiguity,
+        min_evidence_strength=evidence,
         weights=weights,
     )
 
@@ -237,30 +243,28 @@ def _render_run(engine: HistoricalSimulationEngine) -> None:
         help="Each unit advances one daily market bar. Continuous timed autoplay is deferred.",
     )
     c1, c2, c3, c4 = st.columns(4)
-    if c1.button("Step one bar", disabled=state.terminal, use_container_width=True):
-        engine.step()
-        st.rerun()
-    if c2.button(
+    c1.button(
+        "Step one bar", disabled=state.terminal, use_container_width=True,
+        key="sim_step", on_click=engine.step,
+    )
+    c2.button(
         "Resume batch mode",
         disabled=state.terminal or state.status == SimulationStatus.RUNNING,
         use_container_width=True,
-    ):
-        engine.resume()
-        st.rerun()
-    if c3.button(
+        key="sim_resume", on_click=engine.resume,
+    )
+    c3.button(
         f"Advance {speed} bar{'s' if speed != 1 else ''}",
         disabled=state.terminal or state.status != SimulationStatus.RUNNING,
         use_container_width=True,
-    ):
-        engine.advance(int(speed))
-        st.rerun()
-    if c4.button(
+        key="sim_advance", on_click=engine.advance, args=(int(speed),),
+    )
+    c4.button(
         "Pause",
         disabled=state.terminal or state.status != SimulationStatus.RUNNING,
         use_container_width=True,
-    ):
-        engine.pause()
-        st.rerun()
+        key="sim_pause", on_click=engine.pause,
+    )
 
     st.caption(
         "Batch mode is deterministic: 100 bars produces the same result as 100 single steps. "
@@ -268,24 +272,31 @@ def _render_run(engine: HistoricalSimulationEngine) -> None:
     )
 
     switch_col, reset_col = st.columns([3, 1])
+
+    def apply_strategy():
+        definition = st.session_state.get("simulator_selected_definition")
+        if definition is not None:
+            try:
+                engine.change_strategy(prepare_strategy(definition, engine.df))
+            except (ValueError, RuntimeError) as error:
+                st.error(str(error))
+
+    def reset_replay():
+        st.session_state.pop(_ENGINE_KEY, None)
+        st.session_state.pop(_DATA_KEY, None)
+
     with switch_col:
-        if st.button(
+        st.button(
             "Apply selected sidebar strategy",
             disabled=state.terminal or state.status == SimulationStatus.RUNNING,
             help="Keeps the current holding, cancels any pending order, and applies the new strategy prospectively.",
-        ):
-            definition = st.session_state.get("simulator_selected_definition")
-            if definition is not None:
-                try:
-                    engine.change_strategy(prepare_strategy(definition, engine.df))
-                    st.rerun()
-                except (ValueError, RuntimeError) as error:
-                    st.error(str(error))
+            key="sim_apply_strategy", on_click=apply_strategy,
+        )
     with reset_col:
-        if st.button("Reset replay", use_container_width=True):
-            st.session_state.pop(_ENGINE_KEY, None)
-            st.session_state.pop(_DATA_KEY, None)
-            st.rerun()
+        st.button(
+            "Reset replay", use_container_width=True,
+            key="sim_reset", on_click=reset_replay,
+        )
 
     _render_market_chart(engine)
     equity_series = engine.equity_series()
@@ -365,7 +376,6 @@ def render() -> None:
             st.session_state[_ENGINE_KEY] = engine
             st.session_state[_DATA_KEY] = df
             record_recent_ticker(ticker)
-            st.rerun()
         except (ValueError, KeyError) as error:
             st.error(str(error))
         except Exception as error:

@@ -17,7 +17,24 @@ class Trade:
     predicted_direction: str
     actual_direction: str
     correct: bool
-    pnl_pct: float  # percent return
+    pnl_pct: float  # fractional return on entry equity, after both fills
+    signal_date: pd.Timestamp | None = None
+    target_date: pd.Timestamp | None = None
+    quantity: float = 0.0
+    entry_equity: float | None = None
+    pnl_dollars: float | None = None
+    fees: float = 0.0
+    exit_reason: str = "horizon"
+
+
+@dataclass(frozen=True)
+class PortfolioSnapshot:
+    timestamp: pd.Timestamp
+    cash: float
+    quantity: float
+    close_price: float
+    equity: float
+    exposed: bool  # holding at any time during this bar, including same-bar exits
 
 
 @dataclass
@@ -33,6 +50,13 @@ class BacktestReport:
     evaluation_start: pd.Timestamp | None = None
     evaluation_end: pd.Timestamp | None = None
     excluded_indicators: list[str] = field(default_factory=list)
+    snapshots: list[PortfolioSnapshot] = field(default_factory=list)
+    completion_reason: str = "end_of_data"
+    cost_per_trade_pct: float = 0.0
+    configuration: dict = field(default_factory=dict)
+    configuration_id: str = ""
+    data_fingerprint: str = ""
+    computed_data: pd.DataFrame = field(default_factory=pd.DataFrame, repr=False)
 
     # Computed metrics
     total_trades: int = 0

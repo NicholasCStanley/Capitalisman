@@ -7,10 +7,10 @@ indicators that need data from other tickers (e.g., copper, gold, VIX).
 import numpy as np
 import pandas as pd
 
-# Module-level cache survives across calls within the same process.
-# For Streamlit apps this means the reference data is fetched once per
-# server lifetime, which is fine for slow-moving macro data.
-_reference_cache: dict[str, "pd.Series | None"] = {}
+from config.settings import CACHE_TTL_SECONDS
+from data.series_cache import SeriesCache
+
+_reference_cache = SeriesCache(ttl_seconds=CACHE_TTL_SECONDS)
 
 
 def fetch_reference_close(ticker: str, period: str = "2y") -> "pd.Series | None":
@@ -18,21 +18,16 @@ def fetch_reference_close(ticker: str, period: str = "2y") -> "pd.Series | None"
 
     Returns None on any failure (network, invalid ticker, etc.).
     """
-    cache_key = f"{ticker}_{period}"
-    if cache_key in _reference_cache:
-        return _reference_cache[cache_key]
-    try:
-        import yfinance as yf
-
-        df = yf.Ticker(ticker).history(period=period)
-        if df is not None and not df.empty and "Close" in df.columns:
-            result = df["Close"]
-            _reference_cache[cache_key] = result
-            return result
-    except Exception:
-        pass
-    _reference_cache[cache_key] = None
-    return None
+    def load():
+        try:
+            import yfinance as yf
+            df = yf.Ticker(ticker).history(period=period)
+            if df is not None and not df.empty and "Close" in df.columns:
+                return df["Close"]
+        except Exception:
+            pass
+        return None
+    return _reference_cache.get_or_load((ticker, period), load)
 
 
 def reference_period_for_index(index: pd.DatetimeIndex) -> str:

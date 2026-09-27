@@ -10,10 +10,36 @@ import pytest
 from data.fetcher import (
     compute_buy_and_hold,
     compute_open_to_close_return,
+    fetch_with_warmup,
     is_crypto_ticker,
     slice_date_range,
     trim_to_period,
 )
+
+
+@pytest.mark.parametrize(
+    ("period", "interval", "expected_fetch_period"),
+    [
+        ("1d", "1m", "7d"),
+        ("1mo", "5m", "60d"),
+        ("max", "15m", "60d"),
+        ("5y", "1h", "730d"),
+        ("1d", "1h", "3mo"),
+        ("1d", "1d", "3mo"),
+    ],
+)
+def test_warmup_respects_intraday_history_limits(
+    monkeypatch, period, interval, expected_fetch_period, ohlcv_100
+):
+    calls = []
+
+    def fake_fetch(ticker, fetch_period, fetch_interval):
+        calls.append((ticker, fetch_period, fetch_interval))
+        return ohlcv_100
+
+    monkeypatch.setattr("data.fetcher._fetch_raw", fake_fetch)
+    fetch_with_warmup("TEST", period=period, interval=interval)
+    assert calls == [("TEST", expected_fetch_period, interval)]
 
 
 class TestIsCryptoTicker:

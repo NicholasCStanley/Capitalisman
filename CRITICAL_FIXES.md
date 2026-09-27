@@ -1,5 +1,42 @@
 # Capitalisman Critical Correctness and Hardening Review
 
+## Implementation status
+
+The findings below describe the original review. The first corrective pass has
+implemented findings **1** (OBV future-data slice), **3** (non-finite confidence),
+**5** (profit factor from compounded dollar P&L), and **12** (period selector and
+Simulator UI smoke test). Core technical indicators now have historical-prefix
+signal regression tests. Simulator controls use callbacks so a button press
+performs its action once, and the UI test exercises step, batch playback, pause,
+and reset.
+
+The second pass implements findings **4** (stop at short liquidation and retain
+gap debt), **8** (shared pure scorer), **9** (backtest input validation), and
+**11** (effective TimesFM costs). Backtesting now records daily portfolio
+snapshots and dollar trade P&L, derives drawdown/Sharpe from daily equity, and
+shares fill accounting with simulation. Forecast and trade targets agree at
+`signal_origin + horizon`. Strategy definitions capture parameters, weights and
+horizon adjustments; run/event records include configuration identities.
+TimesFM uses symmetric fee hurdles and bounded, explicitly uncalibrated estimates.
+
+The third pass adds a captured minimum evidence threshold, separate agreement
+and evidence metrics, registry-wide causal-conformance tests, and explicit
+historical opt-in. Cross-asset live feeds are excluded until their historical
+availability contract is established. Offline CI, a hashed dependency lock,
+checksummed research archives with execution replay, and explicit held-out
+strategy/forecast baseline comparisons are now implemented. See
+[`docs/RESEARCH_WORKFLOW.md`](docs/RESEARCH_WORKFLOW.md).
+
+The fourth pass adds explicit verified CPU/CUDA loading without process CUDA
+environment changes, model release on OOM, cooperative cancellation and bounded
+benchmark worker processes. Reference/FRED caches expire and retry failures;
+forecast JSON outputs cannot overwrite existing files. Local-input suites retain
+failures and add exploratory paired block-bootstrap MAE intervals.
+
+TimesFM calibration, historical external-data availability,
+statistical validation on market data, and production execution realism remain open. The short model
+uses a daily-bar zero-equity boundary, not a broker-specific margin model.
+
 ## Executive summary
 
 Capitalisman has a thoughtful overall structure, particularly in its simulation

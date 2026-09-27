@@ -53,6 +53,30 @@ The preflight reports the selected device, package versions, GPU, GPU memory,
 available RAM, and free disk. Errors remain visible in the indicator rather than
 silently masquerading as a valid neutral prediction.
 
+The sidebar exposes Auto, CPU and CUDA independently of workload profiles. An
+explicit CUDA request fails if CUDA is unavailable. CPU loading binds the model
+instance before checkpoint transfer; it does not change `CUDA_VISIBLE_DEVICES`
+or patch PyTorch's CUDA detection. All parameters and buffers, plus the input
+device, are checked after loading and before inference. The `model_device`
+status field reports this observation; preflight leaves it null. The adapter
+is verified against TimesFM 2.0.2 and should be rechecked when upgrading it.
+
+Changing the shared runtime configuration unloads the prior model. Calls on
+one runtime are serialized against unload. Out-of-memory failures release its
+model reference, clear available CUDA cache, and fail the whole request without
+returning partial forecasts or automatically retrying. Reduce batch/chunk size
+explicitly before retrying. `forecast(..., cancel_check=callback)` supports
+cooperative cancellation before/after each chunk; it cannot stop a running GPU
+kernel. The [suite runner](RESEARCH_WORKFLOW.md#bounded-suites-from-local-data)
+uses worker processes for enforced timeouts and cancellation.
+
+`timesfm_check --smoke` includes status after inference. Add `--no-torch-compile`
+to skip optional Torch compilation during a small diagnostic. The Python config
+exposes `torch_compile` (default true); suite defaults set it false. A cached,
+uncompiled synthetic CPU → CUDA → CPU check passed on the RTX 5090 with a
+32-bar context, five-bar horizon and batch/chunk size one. This verifies device
+switching, not every profile or GPU configuration.
+
 Optional runtime settings:
 
 | Variable | Default | Purpose |
@@ -140,8 +164,30 @@ For the selected analysis horizon, `TimesFM Forecast`:
 1. sends only Close prices available at the forecast origin;
 2. obtains the point path and nine forecast quantiles;
 3. reports median expected return, q10 downside, q90 upside, and interval width;
-4. estimates `P(up)` and `P(return > transaction costs)` from the quantiles; and
-5. requires at least 60% directional probability before emitting BUY or SELL.
+4. estimates `P(up)` and separate long/short profitability scores from the quantiles; and
+5. requires a profitability score of at least 60% and a median move beyond that
+   side's fee hurdle before emitting BUY or SELL.
+
+These are uncalibrated model estimates. Interpolation stops at the supplied
+q10–q90 boundaries: numeric scores are clipped to 10–90%, and the Predict panel
+displays clipped tails as `≤10%` or `≥90%`, rather than claiming certainty.
+The benchmark's Brier score uses these clipped numeric estimates.
+
+For a quoted round-trip percentage `c`, each fill charges `f = c / 200` times
+its notional. Long break-even is `origin_close * (1+f)/(1-f)`; short break-even is
+`origin_close * (1-f)/(1+f)`. Backtests pass their selected cost into forecasting
+and execution. These forecast estimates use the known origin close, not the
+unknown next opening price, so they are not calibrated probabilities of an
+executable trade being profitable.
+
+Backtest preparation explicitly requests historical origins even when the
+runtime's profile is interactive. Historical origins follow a fixed grid from
+the first eligible context, without adding an extra origin at the data's end;
+appending future bars therefore does not change earlier forecast availability.
+A forecast from close `t` for `h` bars is
+evaluated against the same `t+h` close used for the modeled trade's planned
+exit. Failed precomputation is recorded in the frame so historical signal reads
+do not retry the entire model at each bar.
 
 Forecast values are written only at actual forecast origins. They are not
 forward-filled across bars, which avoids presenting stale forecasts as if they
@@ -154,8 +200,8 @@ Use a rolling evaluation before assigning material weight to the model:
 
 ```bash
 conda run -n capitalisman-timesfm python -m scripts.benchmark_timesfm AAPL \
-  --period 2y --horizon 10 --step 10 --device cuda \
-  --output /tmp/aapl-timesfm.json
+  --period 5y --horizon 10 --step 10 --device cuda --test-start 2025-01-02 \
+  --archive /tmp/aapl-timesfm.zip --output /tmp/aapl-timesfm.json
 ```
 
 Each origin sees only the history that existed at that origin. The report stores
@@ -163,10 +209,19 @@ every origin/target pair and summarizes:
 
 - median return mean absolute error;
 - naïve last-price return mean absolute error;
+- drift, moving-average and exponential-smoothing baseline errors on identical origins;
+- paired block-bootstrap intervals for model-versus-baseline MAE differences;
 - directional accuracy;
 - q10-q90 empirical coverage and mean width;
 - probability-of-up Brier score; and
 - q10, q50, and q90 pinball losses.
+
+The archive preserves input bars, configuration, per-origin results and version
+metadata. See [Research workflow](RESEARCH_WORKFLOW.md) for fixed baseline
+definitions, uncertainty assumptions, bounded suites, held-out strategy comparisons
+and replay. Both ZIP and optional JSON destinations must be new. The explicit test date
+must be chosen before examining outcomes. Comparisons are descriptive and do
+not establish statistical significance or calibrated probabilities.
 
 The model adds forecasting value only if it improves out-of-sample metrics over
 simple baselines consistently across symbols, regimes, and horizons. An 80%

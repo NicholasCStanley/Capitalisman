@@ -5,6 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from importlib import metadata
 from pathlib import Path
+from functools import wraps
+from itertools import chain
+from threading import RLock
+import gc
 import os
 import shutil
 import sys
@@ -31,6 +35,7 @@ class TimesFMRuntimeConfig:
     memory_target_fraction: float = 0.72
     profile_name: str = "custom"
     use_case: str = "interactive"
+    torch_compile: bool = True
 
     @property
     def effective_context(self) -> int:
@@ -99,6 +104,19 @@ class TimesFMRuntimeStatus:
     gpu_free_memory_gb: float | None = None
     available_ram_gb: float | None = None
     free_disk_gb: float | None = None
+    model_device: str | None = None
+
+
+class ForecastCancelled(RuntimeError):
+    """Cooperative cancellation checked before/after each inference chunk."""
+
+
+def _serialized(method):
+    @wraps(method)
+    def locked(self, *args, **kwargs):
+        with self._lock:
+            return method(self, *args, **kwargs)
+    return locked
 
 
 @dataclass(frozen=True)
@@ -118,15 +136,19 @@ class TimesFMForecast:
 
 
 def probability_above(forecast: TimesFMForecast, threshold: float) -> float:
-    """Approximate P(value > threshold) from forecast quantiles."""
+    """Uncalibrated quantile interpolation, clipped to the known 10–90% range.
+
+    Values at the clipping limits represent tail bounds, not exact tail
+    probabilities. Do not extrapolate the unobserved tails to certainty.
+    """
     values = np.array(
         [forecast.terminal_quantile(level) for level in QUANTILE_LEVELS],
         dtype=float,
     )
     levels = np.array(QUANTILE_LEVELS, dtype=float)
     values = np.maximum.accumulate(values)
-    cdf = float(np.interp(threshold, values, levels, left=0.0, right=1.0))
-    return max(0.0, min(1.0, 1.0 - cdf))
+    cdf = float(np.interp(threshold, values, levels, left=0.1, right=0.9))
+    return float(np.clip(1.0 - cdf, 0.1, 0.9))
 
 
 class TimesFMRuntime:
@@ -141,21 +163,23 @@ class TimesFMRuntime:
         self._model_factory = model_factory
         self._model = None
         self._status: TimesFMRuntimeStatus | None = None
+        self._lock = RLock()
 
     @property
     def status(self) -> TimesFMRuntimeStatus:
         return self._status or self.preflight()
 
+    @_serialized
     def preflight(self) -> TimesFMRuntimeStatus:
+        if self._model is not None:
+            self._verify_model_device()
+            return self._status
         requested = self.config.device.lower()
         if requested not in {"auto", "cuda", "cpu"}:
             self._status = TimesFMRuntimeStatus(
                 "failed", f"Unsupported device '{requested}'", requested
             )
             return self._status
-
-        if requested == "cpu":
-            os.environ.setdefault("CUDA_VISIBLE_DEVICES", "")
 
         status = TimesFMRuntimeStatus(
             state="checking",
@@ -224,6 +248,66 @@ class TimesFMRuntime:
         self._status = status
         return status
 
+    def _load_production_model(self, device):
+        """Bind the upstream module before its checkpoint loader chooses a device.
+
+        TimesFM 2.0.2 auto-selects CUDA in its module constructor. Override only
+        this instance's metadata, not environment variables or torch.cuda APIs.
+        Its Hub loader constructs `cls` before calling load_checkpoint.
+        """
+        import torch
+        import timesfm
+
+        target = torch.device("cuda:0" if device == "cuda" else "cpu")
+
+        class DeviceBoundTimesFM(timesfm.TimesFM_2p5_200M_torch):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                self.model.device = target
+                self.model.device_count = 1  # this adapter uses one device
+
+        # Construct parameters on CPU, then the upstream loader moves the
+        # checkpoint to the explicitly chosen device before torch.compile.
+        with torch.device("cpu"):
+            model = DeviceBoundTimesFM.from_pretrained(
+                self.config.model_id, torch_compile=self.config.torch_compile
+            )
+        model.compile(timesfm.ForecastConfig(
+            max_context=self.config.max_context, max_horizon=self.config.max_horizon,
+            normalize_inputs=True, per_core_batch_size=self.config.batch_size,
+            use_continuous_quantile_head=True, force_flip_invariance=True,
+            infer_is_positive=True, fix_quantile_crossing=True,
+        ))
+        return model
+
+    def _verify_model_device(self):
+        if self._model_factory is not None:
+            return  # injected test models make no tensor-device claim
+        module = self._model.model
+        observed = {str(tensor.device) for tensor in chain(module.parameters(), module.buffers())}
+        expected = "cuda:0" if self.status.resolved_device == "cuda" else "cpu"
+        if observed != {expected} or str(module.device) != expected:
+            raise RuntimeError(f"TimesFM device mismatch: expected {expected}, tensors {sorted(observed)}, input device {module.device}")
+        self.status.model_device = expected
+
+    def _release_model(self):
+        self._model = None
+        if self._status is not None:
+            self._status.model_device = None
+        gc.collect()
+        torch = sys.modules.get("torch")
+        if torch is not None and self._status is not None and self._status.resolved_device == "cuda":
+            try:
+                torch.cuda.empty_cache()
+            except (AttributeError, RuntimeError):
+                pass
+
+    @_serialized
+    def unload(self):
+        self._release_model()
+        self._status = None
+
+    @_serialized
     def load(self) -> TimesFMRuntimeStatus:
         if self._model is not None:
             return self.status
@@ -242,37 +326,53 @@ class TimesFMRuntime:
             if self._model_factory is not None:
                 self._model = self._model_factory()
             else:
-                import torch
-                import timesfm
-
-                torch.set_float32_matmul_precision("high")
-                self._model = timesfm.TimesFM_2p5_200M_torch.from_pretrained(
-                    self.config.model_id
-                )
-                self._model.compile(
-                    timesfm.ForecastConfig(
-                        max_context=self.config.max_context,
-                        max_horizon=self.config.max_horizon,
-                        normalize_inputs=True,
-                        per_core_batch_size=self.config.batch_size,
-                        use_continuous_quantile_head=True,
-                        force_flip_invariance=True,
-                        infer_is_positive=True,
-                        fix_quantile_crossing=True,
-                    )
-                )
+                self._model = self._load_production_model(status.resolved_device)
+                self._verify_model_device()
             self._status.state = "loaded"
             self._status.message = "TimesFM model loaded successfully"
         except Exception as error:
-            self._model = None
-            status.state = "failed"
+            self._release_model()
+            status.state = "out_of_memory" if self._is_oom(error) else "failed"
             status.message = f"TimesFM model load failed: {error}"
             self._status = status
             raise RuntimeError(status.message) from error
 
         return self._status
 
-    def forecast(self, inputs: list[np.ndarray], horizon: int) -> list[TimesFMForecast]:
+    @staticmethod
+    def _is_oom(error):
+        return isinstance(error, MemoryError) or "out of memory" in str(error).lower()
+
+    @_serialized
+    def forecast(self, inputs: list[np.ndarray], horizon: int, *, cancel_check=None) -> list[TimesFMForecast]:
+        """Forecast atomically; cancellation takes effect between model calls.
+
+        A GPU kernel cannot be interrupted here. Use a process boundary when a
+        hard wall-time limit is required. No partial forecasts are returned.
+        """
+        def check_cancel():
+            if cancel_check is not None and cancel_check():
+                raise ForecastCancelled("TimesFM forecast cancelled")
+        check_cancel()
+        try:
+            return self._forecast(inputs, horizon, check_cancel)
+        except ForecastCancelled:
+            if self._status is not None:
+                self._status.state = "cancelled"
+                self._status.message = "Forecast cancelled between inference chunks"
+            raise
+        except (RuntimeError, MemoryError) as error:
+            if self._status is not None:
+                if self._is_oom(error):
+                    self._release_model()
+                    self._status.state = "out_of_memory"
+                    self._status.message = "TimesFM exhausted memory; model released. Reduce batch/chunk size before retrying."
+                else:
+                    self._status.state = "failed"
+                    self._status.message = str(error)
+            raise RuntimeError(self._status.message if self._status is not None else str(error)) from error
+
+    def _forecast(self, inputs, horizon, check_cancel):
         if horizon < 1 or horizon > self.config.max_horizon:
             raise ValueError(
                 f"Horizon must be between 1 and {self.config.max_horizon}, got {horizon}"
@@ -292,14 +392,17 @@ class TimesFMRuntime:
             if not np.all(np.isfinite(values)):
                 raise ValueError(f"Input {index} contains NaN or infinite values")
         self.load()
+        self._verify_model_device()
         input_count = len(prepared)
         point_parts = []
         quantile_parts = []
         for start in range(0, input_count, self.config.chunk_size):
+            check_cancel()
             chunk = list(prepared[start : start + self.config.chunk_size])
             chunk_point, chunk_quantiles = self._model.forecast(
                 horizon=horizon, inputs=chunk
             )
+            check_cancel()
             point_parts.append(np.asarray(chunk_point, dtype=float))
             quantile_parts.append(np.asarray(chunk_quantiles, dtype=float))
         point = np.concatenate(point_parts, axis=0)
@@ -332,6 +435,8 @@ class TimesFMRuntime:
                     device=self.status.resolved_device,
                 )
             )
+        self.status.state = "loaded"
+        self.status.message = "TimesFM inference completed successfully"
         return forecasts
 
     @staticmethod
@@ -345,15 +450,22 @@ class TimesFMRuntime:
 
 
 _runtime: TimesFMRuntime | None = None
+_runtime_lock = RLock()
 
 
 def get_timesfm_runtime(config: TimesFMRuntimeConfig | None = None) -> TimesFMRuntime:
     global _runtime
-    if _runtime is None or (config is not None and _runtime.config != config):
-        _runtime = TimesFMRuntime(config)
-    return _runtime
+    with _runtime_lock:
+        if _runtime is None or (config is not None and _runtime.config != config):
+            if _runtime is not None:
+                _runtime.unload()
+            _runtime = TimesFMRuntime(config)
+        return _runtime
 
 
 def reset_timesfm_runtime() -> None:
     global _runtime
-    _runtime = None
+    with _runtime_lock:
+        if _runtime is not None:
+            _runtime.unload()
+        _runtime = None

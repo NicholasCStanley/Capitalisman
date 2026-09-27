@@ -83,6 +83,10 @@ def render():
     try:
         with st.spinner("Fetching data..."):
             df = fetch_ohlcv(ticker, period=fetch_period)
+            from research.data import completed_daily_bars
+            df = completed_daily_bars(df)
+            if df.empty:
+                raise ValueError("No completed daily bars are available")
     except ValueError as e:
         st.error(str(e))
         return
@@ -126,6 +130,16 @@ def render():
             + ". These indicators remain available for current predictions."
         )
 
+    if report.configuration_id:
+        from research.artifacts import build_backtest_archive
+        st.download_button(
+            "Download research archive",
+            data=build_backtest_archive(report, df),
+            file_name=f"{ticker}_backtest_{report.configuration_id[:12]}.zip",
+            mime="application/zip",
+            help="Input bars, computed indicators, configuration, trades, daily equity and version metadata.",
+        )
+
     if report.total_trades == 0:
         st.warning(
             "No trades generated in the requested evaluation window. "
@@ -133,13 +147,20 @@ def render():
         )
         return
 
-    first_entry = report.trades[0].entry_date
-    last_exit = report.trades[-1].exit_date
+    first_entry = report.evaluation_start
+    last_exit = report.evaluation_end
     st.caption(
         f"Evaluation: {first_entry:%Y-%m-%d} to {last_exit:%Y-%m-%d}. "
-        f"Signals use closing data and enter at the next bar's open; exits use the close "
-        f"after {horizon} bars. Short positions are modeled without borrow costs."
+        f"Signals use completed closes and enter at the next open. Exit is {horizon} "
+        "bars after the signal (a one-bar horizon exits on entry day). "
+        "Half the quoted cost is charged on each fill's notional. "
+        "Shorts use at most 1× entry equity, with zero-equity liquidation and no borrow costs."
     )
+    if report.completion_reason == "insolvency":
+        st.warning("Run stopped at liquidation. Any debt from a gap is retained in final equity.")
+    with st.expander("Run configuration"):
+        st.caption(f"Configuration: {report.configuration_id} · Data: {report.data_fingerprint}")
+        st.json(report.configuration)
 
     # Compute benchmark/buy-and-hold returns for context
     ticker_eval = slice_date_range(df, first_entry, last_exit)
@@ -166,12 +187,13 @@ def render():
 
     m6, m7, m8 = st.columns(3)
     pf_display = "No losses" if report.profit_factor == float("inf") else f"{report.profit_factor:.2f}"
-    m6.metric("Sharpe Ratio", f"{report.sharpe_ratio:.2f}")
+    m6.metric("Sharpe Ratio", f"{report.sharpe_ratio:.2f}",
+              help="Daily portfolio returns including cash days; zero risk-free rate, 252 stock / 365 crypto days per year")
     m7.metric("Profit Factor", pf_display)
     m8.metric(
         "Time in Market",
         f"{report.exposure_pct:.1%}",
-        help="Share of the evaluated calendar span with an open modeled position",
+        help="Share of evaluated daily bars carrying a position, including entry and exit bars",
     )
 
     # Benchmark context
@@ -188,7 +210,7 @@ def render():
             bh_cols[1].metric(
                 f"{ticker} Buy & Hold",
                 f"{ticker_bh:+.1%}",
-                delta=f"{alpha:+.1%} strategy alpha" if alpha != 0 else None,
+                delta=f"{alpha:+.1%} excess return" if alpha != 0 else None,
                 delta_color="normal",
             )
         if benchmark_bh is not None:
@@ -201,10 +223,6 @@ def render():
             )
 
     # Price chart with prediction markers
-    computed_df = df.copy()
-    for name, indicator in chosen.items():
-        computed_df = indicator.compute_for_horizon(computed_df, horizon)
-
     correct_trades = [t for t in report.trades if t.correct]
     incorrect_trades = [t for t in report.trades if not t.correct]
 
@@ -230,7 +248,7 @@ def render():
             "size": 8,
         })
 
-    computed_display = computed_df.loc[computed_df.index >= evaluation_start]
+    computed_display = slice_date_range(df, first_entry, last_exit)
     render_price_chart(
         computed_display,
         title=f"{ticker} — Backtest Results",
@@ -253,6 +271,10 @@ def render():
                 "Entry $": f"{t.entry_price:.2f}",
                 "Exit $": f"{t.exit_price:.2f}",
                 "P&L": f"{t.pnl_pct:+.2%}",
+                "P&L $": t.pnl_dollars,
+                "Fees $": t.fees,
+                "Quantity": t.quantity,
+                "Exit Reason": t.exit_reason,
                 "Correct": "Yes" if t.correct else "No",
             })
         trade_df = pd.DataFrame(trade_data)

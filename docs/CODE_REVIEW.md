@@ -3,6 +3,11 @@
 Reviewed at commit `cdf85aa` (Ludofinancial Simulation). ~8,950 lines of Python
 across 9 packages, 238 tests.
 
+This is the original review, not current implementation status. Several findings
+have since been addressed; see [the corrective-pass status](../CRITICAL_FIXES.md)
+and [the research workflow](RESEARCH_WORKFLOW.md). In particular, a fixed release
+lag alone does **not** make revised FRED data valid for historical backtests.
+
 ---
 
 ## 1. Executive summary

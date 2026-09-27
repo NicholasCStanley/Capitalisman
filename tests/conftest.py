@@ -5,6 +5,24 @@ import pandas as pd
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def offline_integrations(monkeypatch):
+    """Unit/UI tests never download market data or real model weights."""
+    import indicators.macro as macro
+    import indicators.systemic as systemic
+    import indicators.fred as fred
+    from ml.timesfm_runtime import TimesFMRuntime
+    for module in (macro, systemic):
+        monkeypatch.setattr(module, "fetch_reference_close", lambda *args, **kwargs: None)
+    monkeypatch.setattr(fred, "_fetch_fred_series", lambda *args, **kwargs: None)
+    original = TimesFMRuntime.load
+    def load(self):
+        if self._model_factory is None:
+            raise RuntimeError("Real model loading is disabled in offline tests")
+        return original(self)
+    monkeypatch.setattr(TimesFMRuntime, "load", load)
+
+
 def make_ohlcv(
     n_bars: int = 100,
     start_price: float = 100.0,

@@ -23,7 +23,11 @@ Pick a ticker (like `AAPL` for Apple, or `BTC-USD` for Bitcoin) and a time horiz
 - **SELL** — indicators suggest the price is likely to go down
 - **HOLD** — signals are mixed or too close to call
 
-Each prediction comes with a **directional-agreement score** (0–100%) showing how much of the actionable weighted vote supports the winning direction. It is not a calibrated probability that the prediction will be correct.
+Each prediction shows **directional agreement** (the winning share of actionable
+weighted votes) alongside **evidence strength** (actionable weighted confidence
+divided by all selected weight). A configurable 15% evidence floor prevents a
+lone weak vote from producing BUY/SELL. Both are heuristic scores, not calibrated
+probabilities. The same scoring policy applies to backtests and replays.
 
 **Multi-Timeframe Signals** — Above the primary signal card, three compact cards show the signal for 1-day, 5-day, and 20-day horizons simultaneously, so you can see whether short-term and long-term outlooks agree at a glance.
 
@@ -42,7 +46,24 @@ You'll see:
 - **Trade Log** — every individual trade with entry/exit prices and profit/loss
 - **CSV Export** — download the full trade log as a CSV file for further analysis in Excel or Google Sheets
 
-Backtests include **configurable transaction costs** (slippage and commissions, default 0.1% per trade). Signals are evaluated at a bar's close, entered at the next bar's open, and exited at the close after the selected number of bars. Revised FRED series are excluded because the integration does not provide point-in-time vintages. Short positions are modeled without borrow costs.
+Backtests include **configurable transaction costs** (slippage and commissions,
+default quoted round-trip cost 0.1%). Half the quoted percentage is charged on
+each fill's actual notional. A signal at close `t` enters at open `t+1` and exits
+at close `t+horizon`: a one-bar trade opens and closes on the next day.
+
+Cash and positions are valued at every daily close, including idle cash days.
+Drawdown uses that equity history; Sharpe uses daily portfolio returns with a
+zero risk-free rate and 252 stock or 365 crypto sessions per year. Profit factor
+uses dollar P&L. Evaluation dates include the cash periods before and after
+trades, and benchmarks use that same range.
+
+Shorts use at most one times entry equity, with sale proceeds held as collateral.
+The modeled short closes if the bar's high reaches its zero-equity covering
+price, including the cover fee. If the open gaps beyond that price, it closes at
+the open instead; resulting debt remains visible and the run stops. This is a
+daily-bar liquidation approximation, without broker maintenance-margin rules,
+borrow fees, or guaranteed execution through gaps. FRED and live cross-asset reference feeds remain
+excluded because their point-in-time vintages are unavailable in this integration.
 
 ### Simulator — Replay a Strategy from a Historical Date
 
@@ -62,6 +83,12 @@ excluded until their historical inputs can be reproduced safely. Continuous
 wall-clock animation, saved runs, and more complex portfolio rules are tracked
 in [`ROADMAP.md`](ROADMAP.md).
 
+Strategy definitions snapshot indicator parameters, weights, and horizon
+adjustments. Preparing the same definition again ignores later sidebar changes.
+The event ledger records configuration identifiers and settings at creation and
+strategy changes. Simulation and backtesting share fill accounting and signal
+scoring; their holding and exit rules remain different.
+
 ### Search — Find Any Ticker
 
 Don't know the exact Yahoo Finance symbol? The Search page lets you type a company name, keyword, or partial symbol and browse matching results. Each result shows the symbol, full name, exchange, and asset type. Click **Analyze** on any result to jump straight to the Predict page with that ticker loaded.
@@ -77,7 +104,7 @@ Pick two tickers and compare them head-to-head. The Compare page shows:
 
 ### Screener — Scan Multiple Tickers at Once
 
-Select a preset watchlist (Tech Giants, S&P 500 Top 10, Major Crypto, Indices) or enter your own comma-separated list of tickers. Hit **Scan Watchlist** and the tool runs a full signal analysis on every ticker, then ranks the results by directional agreement. Each result shows price, daily change, signal direction, agreement, and expandable reasoning. Click **View** to jump to the Predict page for any ticker.
+Select a preset watchlist (Tech Giants, S&P 500 Top 10, Major Crypto, Indices) or enter your own comma-separated list of tickers. Hit **Scan Watchlist** and the tool runs a full signal analysis on every ticker, then ranks the results by evidence strength followed by directional agreement. Each result shows price, daily change, signal direction, agreement, and expandable reasoning. Click **View** to jump to the Predict page for any ticker.
 
 **Persistent Watchlists** — When using a custom ticker list, you can save it as a named watchlist. Saved watchlists appear in the dropdown with a "(saved)" suffix and persist across sessions (stored in `~/.capitalisman/watchlists.json`). You can delete user-created watchlists at any time; built-in presets cannot be deleted.
 
@@ -89,9 +116,23 @@ An interactive charting page where you can look at any stock or crypto with prof
 
 ## Getting Started
 
+### Agent operation
+
+Codex, Claude Code and other coding agents can operate the existing research
+commands and Python APIs using [AGENTS.md](AGENTS.md) and the detailed
+[agent operation guide](docs/AGENT_OPERATIONS.md). [CLAUDE.md](CLAUDE.md) imports
+the same policy for Claude Code. The guide covers setup, bounded experiments,
+archive inspection/replay, simulation control and research guardrails. These
+instruction files do not install a remote control server or change tool permissions.
+
 ### Installation
 
 You'll need Python 3.10 or newer installed on your computer.
+
+For the verified Python 3.11 Linux environment, use the hashed
+`requirements-lock.txt` in a virtual environment. See
+[Research workflow](docs/RESEARCH_WORKFLOW.md) for installation, CI checks,
+saved runs and held-out comparisons.
 
 ```bash
 git clone <repository-url>
@@ -154,8 +195,9 @@ for health checks, configuration, interpretation, and point-in-time benchmarking
   chunk size on the installed GPU and software stack.
 - Produces horizon-aware point and quantile forecasts rather than a single fixed
   10-day estimate.
-- Displays median return, q10/q90 range, probability of an upward move, and
-  probability of clearing configured transaction costs.
+- Displays median return, q10/q90 range, and uncalibrated model estimates of an
+  upward move and of clearing configured costs on either side. Unobserved tails
+  are shown as bounds instead of 0%/100% certainty.
 - Includes a rolling point-in-time benchmark against a naïve last-price forecast,
   with directional, calibration, Brier, MAE, and pinball metrics.
 - Has been smoke-tested with CUDA 12.8 on an NVIDIA RTX 5090 from the isolated
@@ -192,7 +234,7 @@ failure instead of disappearing or presenting the ensemble HOLD as a model resul
 
 5. **Compare two tickers** — Switch to the Compare page. The defaults are AAPL and MSFT. You'll see a normalized price chart, side-by-side signals, and their correlation.
 
-6. **Screen a watchlist** — Switch to the Screener page. Select "Tech Giants" from the dropdown and click **Scan Watchlist**. You'll get a ranked table of all 7 tickers sorted by directional agreement.
+6. **Screen a watchlist** — Switch to the Screener page. Select "Tech Giants" from the dropdown and click **Scan Watchlist**. You'll get a ranked table of all 7 tickers sorted by evidence strength, then agreement.
 
 7. **Explore a chart** — Switch to the Explore page. Try `BTC-USD` (Bitcoin) and toggle different indicators on and off to see how they overlay on the price chart.
 
@@ -282,9 +324,12 @@ The tool doesn't rely on any single indicator. Instead, it combines all selected
 
 3. **Weights adapt to your time horizon** — if you're predicting 1–3 days ahead, momentum indicators, VPIN, and ML forecasts get boosted because they're better at short-term signals. For predictions beyond 10 days, trend indicators, macro regime signals, and bubble risk get boosted instead. Each of the 9 indicator categories has its own timescale profile.
 
-4. **Only BUY and SELL compete** — indicators that vote HOLD are recorded but don't influence the directional outcome. The direction with the highest weighted score wins.
+4. **Only BUY and SELL compete for direction** — HOLD votes do not support either side, but their selected weight remains in the evidence-strength denominator.
 
 5. **Ambiguous signals become HOLD** — if BUY and SELL scores are within 10% of each other, the result is HOLD rather than making a low-confidence call.
+
+6. **Weak evidence becomes HOLD** — actionable weighted confidence must reach
+   15% of all selected weight by default. The configurable floor is a heuristic.
 
 ## Backtest Settings
 
@@ -295,9 +340,17 @@ When running a backtest, you can configure:
 - **Signal Horizon** — a 1–30 daily-bar horizon used to adjust indicator weights and measure backtest exits; stock bars exclude weekends and market holidays
 - **Indicators** — which indicators to include in the signal
 - **Initial Capital** — starting portfolio value (default $10,000)
-- **Transaction Cost** — round-trip cost per trade as a percentage (default 0.1%), covering slippage and commissions
+- **Transaction Cost** — quoted round-trip percentage (default 0.1%); half is charged on entry notional and half on exit notional
 
 The displayed period is the evaluation window, not the warmup window. The app fetches earlier observations for rolling indicators, then restricts trades and benchmarks to matching dates.
+
+The report records the effective indicator/scoring settings, model runtime
+configuration when present, execution assumptions version, and fingerprints for
+the configuration and input data. The trade CSV includes dollar P&L, fees,
+quantity, and the exit reason. **Download research archive** also saves the actual
+input bars, computed indicators, settings, results and software metadata in a
+checksummed ZIP. See [Research workflow](docs/RESEARCH_WORKFLOW.md) for offline
+execution replay and held-out baseline comparisons.
 
 ## Configuration
 
@@ -417,13 +470,13 @@ pip install -r requirements-dev.txt
 python -m pytest tests/ -v
 ```
 
-The suite currently contains 196 tests and uses synthetic OHLCV data for core
-behavior. Cross-asset indicators (Copper-Gold Ratio, VIX Term Structure, Market
-Correlation) may attempt to fetch live reference data; without network access,
-they gracefully fall back to HOLD with zero confidence. FRED Macro behaves the
-same way when `FRED_API_KEY` is unavailable. TimesFM unit tests use an injected
-model and never download weights; real CUDA inference is an explicit smoke test
-documented in [`docs/TIMESFM.md`](docs/TIMESFM.md).
+The suite runs offline with synthetic data, injected reference feeds and injected
+TimesFM models. Real model loading is disabled in unit tests. Every indicator
+admitted to backtesting has historical-prefix conformance tests; external-feed
+fixtures test algebraic causality without claiming provider availability.
+Use the explicit smoke test in [`docs/TIMESFM.md`](docs/TIMESFM.md) for real CUDA
+inference. CI installs the hashed lock, checks dependencies, runs Ruff correctness
+checks, and runs the suite.
 
 ## Adding Your Own Indicators
 
@@ -435,9 +488,22 @@ The indicator system uses a plugin architecture. To add a new indicator:
 4. Import the module in `indicators/__init__.py`
 5. Add entries to `INDICATOR_WEIGHTS`, `INDICATOR_CATEGORIES`, and `TIMESCALE_ADJUSTMENTS` in `config/settings.py`
 
-The indicator is then automatically available in all pages (Predict, Backtest, Explore, Screener) with no further wiring needed.
+The indicator becomes available for current analysis. Historical execution requires
+explicit `historical_safe = True` opt-in and passing the registry-wide causality
+contract. External data also needs a point-in-time availability contract.
 
 For indicators that need data from other tickers (like the macro and systemic indicators), use the helpers in `indicators/_utils.py` — `fetch_reference_close()` provides cached fetching, and `align_to_index()` handles timezone-safe date alignment.
+
+Reference series expire after five minutes; FRED series expire after one hour.
+Failed requests retry after 30 seconds. Adding/changing a FRED key permits a new
+attempt immediately. Both caches are bounded and return independent series
+copies; these freshness limits do not establish historical data availability.
+
+For repeatable research across assets and horizons, use
+`python -m scripts.benchmark_suite protocol.json --output-dir research_runs/new-run`.
+The [research workflow](docs/RESEARCH_WORKFLOW.md#bounded-suites-from-local-data)
+documents the protocol, worker time limits, preserved failure records and
+exploratory forecast uncertainty intervals.
 
 ## Disclaimer
 

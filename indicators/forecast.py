@@ -38,11 +38,15 @@ class TimesFMAnalysis:
     probability_profit: float
     probability_down: float
     forecast: RuntimeForecast
+    probability_short_profit: float = 0.0
+    cost_per_trade_pct: float = DEFAULT_COST_PER_TRADE_PCT
 
 
 @register
 class TimesFMForecast(BaseIndicator):
     """TimesFM 2.5 probabilistic forecast exposed as a research signal."""
+
+    historical_safe = True
 
     def __init__(self, runtime: TimesFMRuntime | None = None) -> None:
         self.runtime = runtime or get_timesfm_runtime()
@@ -67,8 +71,23 @@ class TimesFMForecast(BaseIndicator):
     def compute_for_horizon(
         self, df: pd.DataFrame, horizon_days: int
     ) -> pd.DataFrame:
+        return self._compute(df, horizon_days, DEFAULT_COST_PER_TRADE_PCT)
+
+    def compute_for_backtest(
+        self, df: pd.DataFrame, horizon_days: int, cost_per_trade_pct: float
+    ) -> pd.DataFrame:
+        return self._compute(df, horizon_days, cost_per_trade_pct, historical=True)
+
+    def _compute(
+        self, df: pd.DataFrame, horizon_days: int, cost_per_trade_pct: float,
+        historical: bool = False,
+    ) -> pd.DataFrame:
+        if not np.isfinite(cost_per_trade_pct) or not 0 <= cost_per_trade_pct < 100:
+            raise ValueError("Transaction cost must be in [0, 100)")
         result = df.copy()
         self._initialize_columns(result)
+        result.attrs["timesfm_horizon"] = horizon_days
+        result["TFM_cost_pct"] = cost_per_trade_pct
         self.latest_analysis = None
         self.last_error = None
 
@@ -76,13 +95,13 @@ class TimesFMForecast(BaseIndicator):
             self.last_error = f"TimesFM needs at least {MIN_CONTEXT} bars"
             return result
 
-        if self.runtime.config.use_case in {"interactive", "watchlist"}:
+        if not historical and self.runtime.config.use_case in {"interactive", "watchlist"}:
             origins = [len(result) - 1]
         else:
             origins = list(
                 range(MIN_CONTEXT - 1, len(result), max(1, horizon_days))
             )
-            if origins[-1] != len(result) - 1:
+            if not historical and origins[-1] != len(result) - 1:
                 origins.append(len(result) - 1)
         contexts = [
             result["Close"].iloc[: origin + 1].to_numpy(dtype=np.float32)
@@ -100,6 +119,7 @@ class TimesFMForecast(BaseIndicator):
                 forecast,
                 current_price=float(result["Close"].iloc[origin]),
                 origin=result.index[origin],
+                cost_per_trade_pct=cost_per_trade_pct,
             )
             self._write_analysis(result, origin, analysis)
             if origin == len(result) - 1:
@@ -124,6 +144,7 @@ class TimesFMForecast(BaseIndicator):
 
         probability_up = computed["TFM_probability_up"].iloc[idx]
         probability_profit = computed["TFM_probability_profit"].iloc[idx]
+        probability_short_profit = computed["TFM_probability_short_profit"].iloc[idx]
         expected_return = computed["TFM_expected_return"].iloc[idx]
         downside_return = computed["TFM_downside_return"].iloc[idx]
 
@@ -131,25 +152,26 @@ class TimesFMForecast(BaseIndicator):
             detail = self.last_error or "No TimesFM forecast at this evaluation origin"
             return SignalResult(self.name, SignalDirection.HOLD, 0.0, detail)
 
-        probability_down = 1.0 - float(probability_up)
         strength = min(0.9, abs(float(probability_up) - 0.5) * 2)
-        cost = DEFAULT_COST_PER_TRADE_PCT / 100.0
+        fee_rate = float(computed["TFM_cost_pct"].iloc[idx]) / 200.0
+        long_hurdle = (1 + fee_rate) / (1 - fee_rate) - 1
+        short_hurdle = (1 - fee_rate) / (1 + fee_rate) - 1
 
-        if probability_profit >= MIN_DIRECTIONAL_PROBABILITY and expected_return > cost:
+        if probability_profit >= MIN_DIRECTIONAL_PROBABILITY and expected_return > long_hurdle:
             return SignalResult(
                 self.name,
                 SignalDirection.BUY,
                 strength,
                 f"TimesFM median {expected_return:+.1%} over {horizon_days} bars; "
-                f"P(return > costs) {probability_profit:.0%}; q10 {downside_return:+.1%}",
+                f"long profit score {probability_profit:.0%}; q10 {downside_return:+.1%}",
             )
-        if probability_down >= MIN_DIRECTIONAL_PROBABILITY and expected_return < -cost:
+        if probability_short_profit >= MIN_DIRECTIONAL_PROBABILITY and expected_return < short_hurdle:
             return SignalResult(
                 self.name,
                 SignalDirection.SELL,
                 strength,
                 f"TimesFM median {expected_return:+.1%} over {horizon_days} bars; "
-                f"P(down) {probability_down:.0%}; q10 {downside_return:+.1%}",
+                f"short profit score {probability_short_profit:.0%}; q10 {downside_return:+.1%}",
             )
         return SignalResult(
             self.name,
@@ -188,6 +210,7 @@ class TimesFMForecast(BaseIndicator):
             "TFM_interval_width",
             "TFM_probability_up",
             "TFM_probability_profit",
+            "TFM_probability_short_profit",
             "TFM_horizon",
         ):
             df[column] = np.nan
@@ -203,6 +226,8 @@ class TimesFMForecast(BaseIndicator):
     @staticmethod
     def _has_computed_horizon(df: pd.DataFrame, horizon: int) -> bool:
         """Return whether this frame already contains forecasts for a horizon."""
+        if df.attrs.get("timesfm_horizon") == horizon:
+            return True  # includes failed attempts, which must not retry at every bar
         if "TFM_horizon" not in df.columns:
             return False
         computed = df["TFM_horizon"].dropna()
@@ -213,11 +238,14 @@ class TimesFMForecast(BaseIndicator):
         forecast: RuntimeForecast,
         current_price: float,
         origin: pd.Timestamp | object,
+        cost_per_trade_pct: float = DEFAULT_COST_PER_TRADE_PCT,
     ) -> TimesFMAnalysis:
         median = forecast.terminal_quantile(0.5)
         lower = forecast.terminal_quantile(0.1)
         upper = forecast.terminal_quantile(0.9)
-        cost = DEFAULT_COST_PER_TRADE_PCT / 100.0
+        fee_rate = cost_per_trade_pct / 200.0
+        long_break_even = current_price * (1 + fee_rate) / (1 - fee_rate)
+        short_break_even = current_price * (1 - fee_rate) / (1 + fee_rate)
         return TimesFMAnalysis(
             origin=origin,
             horizon=forecast.horizon,
@@ -229,9 +257,11 @@ class TimesFMForecast(BaseIndicator):
             downside_return=lower / current_price - 1.0,
             interval_width=(upper - lower) / current_price,
             probability_up=probability_above(forecast, current_price),
-            probability_profit=probability_above(forecast, current_price * (1.0 + cost)),
+            probability_profit=probability_above(forecast, long_break_even),
             probability_down=1.0 - probability_above(forecast, current_price),
             forecast=forecast,
+            probability_short_profit=1.0 - probability_above(forecast, short_break_even),
+            cost_per_trade_pct=cost_per_trade_pct,
         )
 
     @staticmethod
@@ -249,6 +279,7 @@ class TimesFMForecast(BaseIndicator):
             "TFM_interval_width": analysis.interval_width,
             "TFM_probability_up": analysis.probability_up,
             "TFM_probability_profit": analysis.probability_profit,
+            "TFM_probability_short_profit": analysis.probability_short_profit,
             "TFM_horizon": analysis.horizon,
         }
         for column, value in values.items():

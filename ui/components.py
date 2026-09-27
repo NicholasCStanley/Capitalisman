@@ -2,6 +2,7 @@
 
 import importlib.util
 import os
+from dataclasses import replace
 
 import streamlit as st
 
@@ -41,15 +42,20 @@ def ticker_input(key: str = "ticker") -> str:
 
 
 def period_select(key: str = "period", default: str = DEFAULT_PERIOD) -> str:
-    """Render period selector."""
+    """Display labels in the widget and return the provider's period code."""
     idx = PERIODS.index(default) if default in PERIODS else 3
-    return st.selectbox(
+    codes_by_label = {PERIOD_LABELS.get(code, code): code for code in PERIODS}
+    # Migrate an existing session that stored the raw code in this widget.
+    previous = st.session_state.get(key)
+    if previous in PERIODS:
+        st.session_state[key] = PERIOD_LABELS.get(previous, previous)
+    selected = st.selectbox(
         "Period",
-        PERIODS,
+        list(codes_by_label),
         index=idx,
         key=key,
-        format_func=lambda p: PERIOD_LABELS.get(p, p),
     )
+    return codes_by_label[selected]
 
 
 def interval_select(key: str = "interval") -> str:
@@ -90,6 +96,13 @@ def indicator_picker(
         if importlib.util.find_spec("timesfm") is None:
             optional_status.append("TimesFM Forecast needs TimesFM 2.5 + PyTorch")
         else:
+            devices = ("auto", "cpu", "cuda")
+            device_default = os.getenv("CAPITALISMAN_TIMESFM_DEVICE", "auto").lower()
+            device = st.selectbox(
+                "TimesFM Device", devices,
+                index=devices.index(device_default) if device_default in devices else 0,
+                key=f"{key}_timesfm_device", format_func=str.upper,
+            )
             profile_choice = st.selectbox(
                 "TimesFM Runtime Profile",
                 PROFILE_PREFERENCES,
@@ -102,14 +115,14 @@ def indicator_picker(
                 ),
             )
             hardware = detect_hardware()
-            if os.getenv("CAPITALISMAN_TIMESFM_DEVICE", "auto").lower() == "cpu":
+            if device == "cpu":
                 hardware = HardwareCapabilities(
                     "cpu", available_ram_gb=hardware.available_ram_gb
                 )
             profile = select_runtime_profile(
                 hardware, use_case=timesfm_use_case, preference=profile_choice
             )
-            runtime = get_timesfm_runtime(TimesFMRuntimeConfig.from_profile(profile))
+            runtime = get_timesfm_runtime(replace(TimesFMRuntimeConfig.from_profile(profile), device=device))
             runtime_status = runtime.status
             if runtime_status.state not in {"ready", "loaded"}:
                 optional_status.append(f"TimesFM: {runtime_status.message}")
@@ -121,6 +134,8 @@ def indicator_picker(
                     f"{profile.batch_size}, chunk {profile.chunk_size}. "
                     f"Use case: {profile.use_case}."
                 )
+                if runtime_status.model_device is not None:
+                    st.caption(f"Verified model tensors: {runtime_status.model_device}")
     if optional_status:
         st.caption("Unavailable: " + "; ".join(optional_status))
     return selected
@@ -156,6 +171,10 @@ def analysis_settings_signature() -> tuple:
     )
     runtime = get_timesfm_runtime()
     timesfm = (
+        runtime.config.device,
+        runtime.config.model_id,
+        runtime.config.max_horizon,
+        runtime.config.torch_compile,
         runtime.config.profile_name,
         runtime.config.use_case,
         runtime.config.max_context,
@@ -188,7 +207,7 @@ def cost_input(key: str = "cost") -> float:
         value=DEFAULT_COST_PER_TRADE_PCT,
         step=0.05,
         key=key,
-        help="Round-trip cost per trade (slippage + commission) as a percentage",
+        help="Quoted round-trip percentage; half is charged on entry notional and half on exit notional.",
     )
 
 

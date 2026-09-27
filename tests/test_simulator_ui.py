@@ -28,12 +28,25 @@ def test_simulator_can_create_and_step_a_replay():
     app.date_input[0].set_value(date(2025, 7, 21)).run(timeout=20)
 
     with patch("ui.page_simulator.fetch_ohlcv", return_value=df):
-        app.button[0].click().run(timeout=20)
+        app.button(key="sim_create").click().run(timeout=20)
 
     assert not app.exception
     assert app.button[0].label == "Step one bar"
-    app.button[0].click().run(timeout=20)
+    app.button(key="sim_step").click().run(timeout=20)
 
     assert not app.exception
     assert app.metric[0].label == "Portfolio"
     assert any("**Status:** Paused" in block.value for block in app.markdown)
+    engine = app.session_state["historical_simulator_engine"]
+    assert len(engine.state.snapshots) == 1
+
+    app.button(key="sim_resume").click().run(timeout=20)
+    app.button(key="sim_advance").click().run(timeout=20)
+    app.button(key="sim_pause").click().run(timeout=20)
+    assert not app.exception
+    assert len(engine.state.snapshots) == 6
+    assert any("**Status:** Paused" in block.value for block in app.markdown)
+
+    app.button(key="sim_reset").click().run(timeout=20)
+    assert not app.exception
+    assert "historical_simulator_engine" not in app.session_state

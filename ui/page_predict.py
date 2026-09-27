@@ -95,10 +95,26 @@ def _render_timesfm_panel(ticker, horizon, analysis, model_signal, error):
     return_cols[2].metric("q90 Upside", f"{upper_return:+.1%}")
     return_cols[3].metric("q10–q90 Width", f"{analysis.interval_width:.1%}")
 
-    probability_cols = st.columns(2)
-    probability_cols[0].metric("Probability Up", f"{analysis.probability_up:.0%}")
+    probability_cols = st.columns(3)
+    def probability_label(value):
+        if value <= 0.1000001:
+            return "≤10%"
+        if value >= 0.8999999:
+            return "≥90%"
+        return f"{value:.0%}"
+
+    probability_cols[0].metric("Model Up Estimate", probability_label(analysis.probability_up))
     probability_cols[1].metric(
-        "Probability Above Costs", f"{analysis.probability_profit:.0%}"
+        "Long Profit Estimate", probability_label(analysis.probability_profit)
+    )
+    probability_cols[2].metric(
+        "Short Profit Estimate", probability_label(analysis.probability_short_profit)
+    )
+    st.caption(
+        "Uncalibrated model estimates from quantiles. Values beyond q10–q90 are "
+        "shown as tail bounds. Profit estimates use the origin close and "
+        f"{analysis.cost_per_trade_pct:g}% quoted round-trip cost, split across fills; "
+        "the next opening price is unknown."
     )
 
     future_bars = list(range(1, analysis.horizon + 1))
@@ -295,7 +311,7 @@ def render():
                         {mtf_arrow} {mtf_signal.direction.value}
                     </p>
                     <p style="font-size: 0.85em; opacity: 0.85; margin: 0;">
-                        Agreement: {mtf_signal.confidence:.0%}
+                        Agreement: {mtf_signal.directional_agreement:.0%} &bull; Evidence: {mtf_signal.evidence_strength:.0%}
                     </p>
                 </div>
                 """,
@@ -320,7 +336,7 @@ def render():
                 {arrow} {signal.direction.value}
             </h1>
             <p style="font-size: 1.3em; opacity: 0.9; margin: 8px 0 0 0;">
-                Directional Agreement: {signal.confidence:.0%}
+                Directional agreement: {signal.directional_agreement:.0%} &bull; Evidence strength: {signal.evidence_strength:.0%}
             </p>
             <p style="font-size: 0.9em; opacity: 0.7; margin: 4px 0 0 0;">
                 {horizon}-bar horizon &bull; {len(selected_indicators)} indicators
@@ -335,7 +351,9 @@ def render():
         st.markdown(f"**Analysis:** {signal.reasoning}")
     st.caption(
         "Directional agreement measures the share of actionable weighted votes "
-        "supporting the result; it is not a probability of success."
+        "supporting the leading direction. Evidence strength divides actionable weighted "
+        "confidence by all selected indicator weight, including neutral indicators. "
+        "Neither is a probability of success. The default 15% evidence floor is a heuristic."
     )
 
     # Score breakdown

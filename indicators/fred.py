@@ -16,6 +16,7 @@ Key signals:
 """
 
 import os
+import hashlib
 from typing import Any
 
 import numpy as np
@@ -25,9 +26,10 @@ from indicators._utils import align_to_index
 from indicators.base import BaseIndicator
 from indicators.registry import register
 from signals.base import SignalDirection, SignalResult
+from data.series_cache import SeriesCache
 
-# Module-level cache — FRED data is slow-moving, fetch once per process.
-_fred_cache: dict[str, "pd.Series | None"] = {}
+# Hourly refresh for successful FRED requests; failures retry after 30 seconds.
+_fred_cache = SeriesCache(ttl_seconds=3600)
 
 
 def _get_fred_api_key() -> str | None:
@@ -40,27 +42,20 @@ def _fetch_fred_series(series_id: str) -> "pd.Series | None":
 
     Returns None on any failure (missing key, network, bad series, etc.).
     """
-    if series_id in _fred_cache:
-        return _fred_cache[series_id]
-
     api_key = _get_fred_api_key()
     if not api_key:
-        _fred_cache[series_id] = None
         return None
-
-    try:
-        from fredapi import Fred
-
-        fred = Fred(api_key=api_key)
-        data = fred.get_series(series_id)
-        if data is not None and len(data) > 0:
-            _fred_cache[series_id] = data
-            return data
-    except Exception:
-        pass
-
-    _fred_cache[series_id] = None
-    return None
+    def load():
+        try:
+            from fredapi import Fred
+            data = Fred(api_key=api_key).get_series(series_id)
+            if data is not None and len(data) > 0:
+                return data
+        except Exception:
+            pass
+        return None
+    # Credential changes retry immediately without retaining the key itself.
+    return _fred_cache.get_or_load((series_id, hashlib.sha256(api_key.encode()).digest()), load)
 
 
 def clear_fred_cache() -> None:

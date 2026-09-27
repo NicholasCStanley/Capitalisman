@@ -3,9 +3,60 @@
 import pytest
 
 from indicators.registry import get_all_indicators
-from signals.base import CombinedSignal, SignalDirection
-from signals.combiner import _get_timescale, combine_signals
+from signals.base import CombinedSignal, SignalDirection, SignalResult
+from signals.combiner import ScoringPolicy, score_signals, _get_timescale, combine_signals
 from tests.conftest import make_ohlcv
+
+
+@pytest.mark.parametrize("confidence", [float("nan"), float("inf"), -float("inf")])
+def test_signal_rejects_non_finite_confidence(confidence):
+    with pytest.raises(ValueError, match="confidence must be finite"):
+        SignalResult("Invalid", SignalDirection.BUY, confidence)
+
+
+def test_lone_weak_vote_does_not_become_decisive():
+    policy = ScoringPolicy((("weak", 1.0), ("neutral", 1.0)), 0.1)
+    result = score_signals([
+        SignalResult("weak", SignalDirection.BUY, 0.02),
+        SignalResult("neutral", SignalDirection.HOLD, 1.0),
+    ], policy)
+    assert result.direction == SignalDirection.HOLD
+    assert result.directional_agreement == 1.0
+    assert result.evidence_strength == 0.01
+    assert result.actionable_coverage == 0.5
+    assert "Insufficient" in result.reasoning
+
+
+@pytest.mark.parametrize("direction", [SignalDirection.BUY, SignalDirection.SELL])
+def test_evidence_floor_is_symmetric_and_inclusive(direction):
+    policy = ScoringPolicy((("vote", 2.0),), 0.1, min_evidence_strength=0.15)
+    assert score_signals([SignalResult("vote", direction, 0.149)], policy).direction == SignalDirection.HOLD
+    result = score_signals([SignalResult("vote", direction, 0.15)], policy)
+    assert result.direction == direction
+    assert result.evidence_strength == pytest.approx(0.15)
+
+
+def test_missing_and_zero_weight_votes_cannot_inflate_evidence():
+    policy = ScoringPolicy((("vote", 1.0), ("missing", 9.0), ("ignored", 0.0)), 0.1)
+    result = score_signals([SignalResult("vote", SignalDirection.BUY, 1),
+                            SignalResult("ignored", SignalDirection.SELL, 1)], policy)
+    assert result.direction == SignalDirection.HOLD
+    assert result.evidence_strength == result.actionable_coverage == 0.1
+
+
+def test_conflicting_strong_votes_remain_hold():
+    result = score_signals([SignalResult("a", SignalDirection.BUY, 1),
+                            SignalResult("b", SignalDirection.SELL, 1)],
+                           ScoringPolicy((("a", 1), ("b", 1)), 0))
+    assert result.direction == SignalDirection.HOLD
+    assert result.evidence_strength == 1
+    assert result.directional_agreement == 0.5
+
+
+@pytest.mark.parametrize("value", [-1, 1.01, float("nan"), float("inf")])
+def test_evidence_threshold_rejects_invalid_values(value):
+    with pytest.raises(ValueError, match="evidence"):
+        ScoringPolicy((), 0.1, value)
 
 
 class TestGetTimescale:
